@@ -3,6 +3,7 @@ import pandas as pd
 from PyPDF2 import PdfReader
 from openai import OpenAI
 import os
+import json
 
 # --- CONFIGURATIE ---
 st.set_page_config(page_title="Finny | Intelligent Finance", page_icon="💰", layout="wide")
@@ -17,62 +18,91 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # Probeer logo te tonen, faal stil als het niet lukt
-        if os.path.exists("finny_logo.jpg"):
-            st.image("finny_logo.jpg", width=150)
-        
+        # Logo check
+        for ext in ["jpg", "jpeg", "png"]:
+            if os.path.exists(f"finny_logo.{ext}"):
+                st.image(f"finny_logo.{ext}", width=150)
+                break
         st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal</h1>", unsafe_allow_html=True)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        if os.path.exists("finny_logo.jpg"):
-            st.image("finny_logo.jpg", width=150)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         st.error("Onjuist wachtwoord")
         return False
     else:
         return True
 
-# --- DATA INLADEN ---
-@st.cache_data
-def load_demo_data():
-    context = ""
-    
-    # Hulpfunctie om veilig te lezen
-    def read_safely(filename, label, is_csv=False, is_pdf=False, sep=";"):
-        content = ""
-        if os.path.exists(filename):
-            try:
-                if is_csv:
-                    df = pd.read_csv(filename, sep=sep, on_bad_lines='skip', low_memory=False)
-                    content = f"--- {label} ---\n{df.head(3000).to_string(index=False)}\n\n"
-                elif is_pdf:
-                    reader = PdfReader(filename)
-                    text = ""
-                    for page in reader.pages:
-                        text += page.extract_text()
-                    content = f"--- {label} ({filename}) ---\n{text[:15000]}\n\n"
-                else: # TXT
-                    with open(filename, "r", encoding="utf-8") as f:
-                        content = f"--- {label} ---\n{f.read()}\n\n"
-            except: pass
-        return content
+# --- DATA FUNCTIES ---
+# We laden data nu PAS als we het nodig hebben (Lazy Loading) om geheugen en tokens te sparen
 
-    # Bestandsnamen EXACT zoals op GitHub
-    context += read_safely("van_hattem_advies_profiel.txt", "KLANTPROFIEL")
-    context += read_safely("Finny_syllabus.txt", "SYLLABUS")
-    context += read_safely("133700 FinTransactionSearch all 5jr.csv", "TRANSACTIES", is_csv=True, sep=";")
-    context += read_safely("133700 Standaard Rekeningschema Template FinGLAccountSearch.csv", "REKENINGSCHEMA", is_csv=True, sep="\t")
-    
+def get_csv_content():
+    """Haalt alleen de transactiedata op"""
+    content = ""
+    try:
+        if os.path.exists("133700 FinTransactionSearch all 5jr.csv"):
+            df = pd.read_csv("133700 FinTransactionSearch all 5jr.csv", sep=";", on_bad_lines='skip', low_memory=False)
+            # We pakken 2000 regels, dat past makkelijk als we GEEN PDF's meesturen
+            content += f"--- TRANSACTIES ---\n{df.head(2000).to_string(index=False)}\n\n"
+        
+        if os.path.exists("133700 Standaard Rekeningschema Template FinGLAccountSearch.csv"):
+            df_ledger = pd.read_csv("133700 Standaard Rekeningschema Template FinGLAccountSearch.csv", sep="\t", on_bad_lines='skip')
+            content += f"--- REKENINGSCHEMA ---\n{df_ledger.to_string(index=False)}\n\n"
+    except: pass
+    return content
+
+def get_pdf_content():
+    """Haalt alleen de jaarrekeningen op"""
+    content = ""
     pdfs = [
         "Van Hattem Advies B.V. - Jaarrekening 2024.pdf",
         "Van Hattem Advies B.V. - Jaarrekening 2023.pdf",
         "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"
     ]
     for pdf in pdfs:
-        context += read_safely(pdf, "JAARREKENING", is_pdf=True)
+        if os.path.exists(pdf):
+            try:
+                reader = PdfReader(pdf)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text()
+                content += f"--- {pdf} ---\n{text[:10000]}\n\n"
+            except: pass
+    return content
 
-    return context
+def get_base_content():
+    """Haalt profiel en syllabus op (altijd nodig)"""
+    content = ""
+    try:
+        with open("van_hattem_advies_profiel.txt", "r", encoding="utf-8") as f:
+            content += f"--- KLANTPROFIEL ---\n{f.read()}\n\n"
+        with open("Finny_syllabus.txt", "r", encoding="utf-8") as f:
+            context += f"--- SYLLABUS ---\n{f.read()}\n\n"
+    except: pass
+    return content
+
+# --- DE ROUTER (Jouw Finny-Mini idee) ---
+def determine_intent(client, question):
+    """Bepaalt of we CSV, PDF of niks nodig hebben"""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": """
+                 Jij bent een router. Bepaal welke bron nodig is voor de vraag.
+                 Antwoord ALLEEN met: 'CSV', 'PDF', of 'ALGEMEEN'.
+                 - Vragen over transacties, bedragen, leveranciers, kosten, omzet details -> CSV
+                 - Vragen over balans, winst-en-verlies, toelichting, solvabiliteit, kengetallen jaarrekening -> PDF
+                 - Vragen over trends over jaren heen -> PDF
+                 - Begroetingen of algemene vragen -> ALGEMEEN
+                 """},
+                {"role": "user", "content": question}
+            ],
+            temperature=0
+        )
+        return response.choices[0].message.content.strip()
+    except:
+        return "ALGEMEEN" # Fallback
 
 if check_password():
     if "OPENAI_API_KEY" in st.secrets:
@@ -83,31 +113,26 @@ if check_password():
         st.stop()
 
     with st.sidebar:
-        if os.path.exists("finny_logo.jpg"):
-            st.image("finny_logo.jpg", width=150)
+        # Logo
+        for ext in ["jpg", "jpeg", "png"]:
+            if os.path.exists(f"finny_logo.{ext}"):
+                st.image(f"finny_logo.{ext}", width=150)
+                break
         
         st.markdown("### 🏢 Van Hattem Advies B.V.")
         
-        # --- DEBUG CHECK ---
-        # Dit laat zien welke bestanden Streamlit écht ziet
-        files_present = os.listdir()
-        if "133700 FinTransactionSearch all 5jr.csv" in files_present:
-             st.success("✅ Data Connectie Live")
+        # Status Check
+        if os.path.exists("133700 FinTransactionSearch all 5jr.csv"):
+             st.success("✅ Live Koppeling")
         else:
-             st.error("❌ Data nog aan het laden...")
-             # Optioneel: st.write(files_present) # Zet dit aan als je wilt zien wat hij wél ziet
+             st.error("❌ Data niet gevonden")
         
         st.markdown("---")
         if st.button("Reset Sessie"):
             st.rerun()
 
     st.title("👋 Goedemiddag, Michiel.")
-    full_context = load_demo_data()
-    
-    if len(full_context) < 100:
-        st.info("⚠️ Finny is aan het opstarten. Als dit blijft staan: Doe een 'Clear Cache'.")
-
-    st.markdown("De administratie is bijgewerkt. Ik heb inzicht in je cijfers van 2022 t/m nu.")
+    st.markdown("Ik ben ingelogd op Twinfield en je jaarrekeningendossier.")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -120,12 +145,41 @@ if check_password():
         st.chat_message("user").write(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Finny denkt na..."):
+            with st.spinner("Finny bepaalt bron..."):
+                
+                # STAP 1: ROUTER (Kiezen welke data nodig is)
+                intent = determine_intent(client, prompt)
+                
+                # STAP 2: DATA LADEN OP MAAT
+                active_context = get_base_content() # Altijd profiel laden
+                debug_msg = ""
+
+                if "CSV" in intent:
+                    active_context += get_csv_content()
+                    debug_msg = "🔍 *Ik zoek in de transacties...*"
+                elif "PDF" in intent:
+                    active_context += get_pdf_content()
+                    debug_msg = "📄 *Ik lees de jaarrekeningen...*"
+                else:
+                    debug_msg = "💭 *Algemene vraag...*"
+                
+                st.caption(debug_msg) # Laat gebruiker zien wat Finny doet (SaaS ervaring)
+
+            with st.spinner("Analyseren..."):
                 try:
                     messages = [
-                        {"role": "system", "content": f"Je bent Finny. Antwoord zakelijk op basis van deze data:\n{full_context}"},
+                        {"role": "system", "content": f"""
+                        Je bent Finny.
+                        Gebruik deze data om antwoord te geven:
+                        {active_context}
+                        
+                        Stijl: Zakelijk, direct.
+                        Als je transactiedata hebt: REKEN ZELF totalen uit.
+                        Als je PDF data hebt: Citeer of gebruik de cijfers uit de tabel.
+                        """},
                         {"role": "user", "content": prompt}
                     ]
+                    
                     completion = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=messages,
@@ -135,4 +189,7 @@ if check_password():
                     st.write(response)
                     st.session_state.messages.append({"role": "assistant", "content": response})
                 except Exception as e:
-                    st.error(f"Fout: {e}")
+                    if "429" in str(e):
+                        st.error("⚠️ Demo Limiet: Finny is druk. Wacht even of upgrade je OpenAI account.")
+                    else:
+                        st.error(f"Fout: {e}")
