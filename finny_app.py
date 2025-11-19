@@ -1,161 +1,122 @@
 import streamlit as st
 import pandas as pd
-from langchain_experimental.agents import create_pandas_dataframe_agent
-from langchain_openai import ChatOpenAI
-from langchain.agents.agent_types import AgentType
+from pandasai import SmartDataframe
+from pandasai.llm import OpenAI
 from PyPDF2 import PdfReader
 import os
 
-# --- CONFIGURATIE & HUISSTIJL ---
+# --- CONFIGURATIE ---
 st.set_page_config(page_title="Finny | AI Financial Assistant", page_icon="💼", layout="wide")
 
-# Verberg standaard Streamlit elementen voor een 'SaaS' look
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            .css-1rs6os {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
-
-# --- INLOG SYSTEEM (Fake authenticatie voor Demo Gevoel) ---
+# --- INLOG SYSTEEM ---
 def check_password():
-    """Returns `True` if the user had the correct password."""
+    """Simpele wachtwoord beveiliging"""
     def password_entered():
-        if st.session_state["password"] == "demo2025": # HET WACHTWOORD
+        if st.session_state["password"] == "demo2025":
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # wachtwoord niet bewaren
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # Eerste keer, toon input
         st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Login</h1>", unsafe_allow_html=True)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
-        st.warning("🔒 Dit is een beveiligde omgeving voor financiële analyse.")
         return False
     elif not st.session_state["password_correct"]:
-        # Fout wachtwoord
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         st.error("😕 Wachtwoord onjuist")
         return False
     else:
-        # Goed wachtwoord
         return True
 
 if check_password():
-    # --- HIER BEGINT DE ECHTE APP NA INLOGGEN ---
-    
-    # Haal API key uit de cloud secrets (veilig)
+    # API Key ophalen
     if "OPENAI_API_KEY" in st.secrets:
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
     else:
-        st.error("Systeemfout: API Key ontbreekt in configuratie.")
+        st.error("Systeemfout: API Key ontbreekt in secrets.")
         st.stop()
 
-    # Sidebar (De 'Controller')
+    # --- SIDEBAR ---
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/4712/4712009.png", width=80) # Placeholder logo
-        st.markdown("### 📂 Dossier Selectie")
-        st.info("Selecteer de klantdata voor analyse.")
-        
+        st.title("🤖 Finny")
+        st.markdown("### Dossier Selectie")
         pdf_file = st.file_uploader("Jaarrekening (PDF)", type=["pdf"])
         csv_file = st.file_uploader("Transacties (CSV)", type=["csv"])
         
         st.markdown("---")
-        if st.button("Uitloggen"):
-            st.session_state["password_correct"] = False
+        if st.button("Herstarten"):
             st.rerun()
 
-    # Hoofdscherm
-    st.markdown("# 👋 Hallo, ik ben Finny.")
-    st.markdown("##### *Jouw virtuele financieel analist.*")
-    st.markdown("---")
-
-    # Chat Geschiedenis
+    # --- HOOFDSCHERM ---
+    st.markdown("### 👋 Hallo, ik ben Finny.")
+    st.markdown("Stel me vragen over de cijfers. Ik combineer boekhouding (PDF) met transacties (CSV).")
+    
+    # Chat historie
     if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Ik heb toegang tot de geüploade dossiers. Stel me een vraag over de winstgevendheid, specifieke kostenposten of balanstotalen."}]
+        st.session_state.messages = [{"role": "assistant", "content": "Upload je bestanden en vraag maar raak!"}]
 
     for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+        st.chat_message(msg["role"]).write(msg["content"])
 
-    # Input Veld
-    prompt = st.chat_input("Wat wil je weten over dit dossier?")
+    # Input
+    prompt = st.chat_input("Wat wil je weten?")
 
     if prompt:
-        # Toon user message
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
+        st.chat_message("user").write(prompt)
 
-        # --- HET BREIN (ROUTER) ---
         response_text = ""
-        
-        csv_triggers = ["hoeveel", "bedrag", "totaal", "som", "kosten", "omzet", "grootste", "leverancier", "transactie", "csv", "betaald", "rekening"]
-        is_math = any(t in prompt.lower() for t in csv_triggers)
 
-        # SCENARIO 1: REKENEN (CSV)
-        if is_math and csv_file:
+        # --- LOGICA: PANDAS AI of PDF LEZER ---
+        
+        # CSV Vraag (Gebruik PandasAI - veel stabieler)
+        if csv_file and any(x in prompt.lower() for x in ["hoeveel", "bedrag", "totaal", "som", "kosten", "omzet", "grootste", "transactie"]):
             with st.chat_message("assistant"):
-                with st.status("🔍 Finny analyseert transacties...", expanded=True) as status:
+                with st.spinner("🔍 Finny duikt in de transacties..."):
                     try:
-                        # CSV Inladen
+                        # CSV inladen
                         csv_file.seek(0)
                         try:
                             df = pd.read_csv(csv_file)
-                            if len(df.columns) < 2: df = pd.read_csv(csv_file, sep=';')
                         except:
+                            csv_file.seek(0)
                             df = pd.read_csv(csv_file, sep=';')
                         
-                        # Agent Maken
-                        llm = ChatOpenAI(temperature=0, model="gpt-4o")
-                        agent = create_pandas_dataframe_agent(
-                            llm, df, verbose=True, agent_type=AgentType.OPENAI_FUNCTIONS, allow_dangerous_code=True
-                        )
+                        # PandasAI instellen (De nieuwe motor)
+                        llm = OpenAI(api_token=os.environ["OPENAI_API_KEY"])
+                        sdf = SmartDataframe(df, config={"llm": llm})
                         
-                        status.write("Berekening uitvoeren...")
-                        response = agent.run(prompt)
-                        status.update(label="Berekening voltooid", state="complete", expanded=False)
-                        response_text = response
+                        # Vraag stellen
+                        response = sdf.chat(prompt)
+                        response_text = str(response)
+                        
                     except Exception as e:
-                        status.update(label="Fout in berekening", state="error")
-                        response_text = "Ik kon de berekening niet uitvoeren op deze dataset. Controleer het CSV formaat."
+                        response_text = f"Fout bij lezen CSV: {e}"
 
-        # SCENARIO 2: LEZEN (PDF)
+        # PDF Vraag (Simpele OpenAI call)
         elif pdf_file:
             with st.chat_message("assistant"):
-                with st.spinner("📖 Finny leest de jaarrekening..."):
-                    # PDF Tekst extraheren
+                with st.spinner("📄 Finny leest de jaarrekening..."):
+                    # PDF lezen
                     text = ""
                     pdf_reader = PdfReader(pdf_file)
                     for page in pdf_reader.pages:
                         text += page.extract_text()
                     
-                    # LLM Vraag
-                    llm = ChatOpenAI(temperature=0.2, model="gpt-4o")
-                    messages = [
-                        {"role": "system", "content": f"Je bent Finny. Antwoord zakelijk en kort op basis van deze jaarrekening:\n\n{text[:40000]}"},
+                    # Vraag aan LLM
+                    from openai import OpenAI as OpenAIClient
+                    client = OpenAIClient()
+                    
+                    msg_history = [
+                        {"role": "system", "content": f"Je bent een accountant. Antwoord op basis van deze jaarrekening:\n\n{text[:30000]}"},
                         {"role": "user", "content": prompt}
                     ]
-                    ai_msg = llm.invoke(messages)
-                    response_text = ai_msg.content
-        
+                    completion = client.chat.completions.create(model="gpt-4o", messages=msg_history)
+                    response_text = completion.choices[0].message.content
+
         else:
-            response_text = "Upload eerst een dossier (PDF of CSV) in het menu links om te kunnen starten."
+            response_text = "Zorg dat je een bestand hebt geüpload (PDF of CSV) voordat je een vraag stelt."
 
-        # Toon antwoord
-        if not response_text: response_text = "Ik begreep de vraag niet goed in combinatie met de bestanden."
-        
-        # Check of we al geschreven hebben in de 'with' blocks
-        if is_math and csv_file:
-            st.write(response_text)
-        elif pdf_file and not (is_math and csv_file): # PDF scenario
-             st.write(response_text)
-        elif not pdf_file and not csv_file:
-             with st.chat_message("assistant"):
-                st.write(response_text)
-
+        st.chat_message("assistant").write(response_text)
         st.session_state.messages.append({"role": "assistant", "content": response_text})
