@@ -80,7 +80,6 @@ if check_password():
                     df = pd.read_csv(csv_file, sep=';')
                 
                 # Zet de CSV om naar tekst zodat GPT het kan 'lezen'
-                # We beperken tot de eerste 2000 regels voor snelheid en stabiliteit in de demo
                 csv_string = df.head(2000).to_string(index=False)
                 context_text += f"\n\nHIER ZIJN DE TRANSACTIES (CSV DATA):\n{csv_string}\n"
             except Exception as e:
@@ -93,7 +92,7 @@ if check_password():
                 pdf_reader = PdfReader(pdf_file)
                 for page in pdf_reader.pages:
                     pdf_text += page.extract_text()
-                # Pak de eerste 30 pagina's (meestal genoeg voor jaarrekening)
+                # Pak de eerste 30 pagina's
                 context_text += f"\n\nHIER IS DE JAARREKENING (PDF DATA):\n{pdf_text[:40000]}\n"
             except Exception as e:
                 st.error(f"Kon PDF niet lezen: {e}")
@@ -111,7 +110,7 @@ if check_password():
                         ]
                         
                         completion = client.chat.completions.create(
-                            model="gpt-4o-mini", # Gebruikt jouw beschikbare model
+                            model="gpt-4o-mini", 
                             messages=messages,
                             temperature=0
                         )
