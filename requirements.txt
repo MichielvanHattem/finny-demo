@@ -3,6 +3,7 @@ pandas
 langchain
 langchain-experimental
 langchain-openai
+langchain-community
 pypdf
 tabulate
 openpyxl
