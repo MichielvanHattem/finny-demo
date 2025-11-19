@@ -5,10 +5,10 @@ from openai import OpenAI
 import os
 import json
 from datetime import datetime
-import re
+import re  # <--- HIER ZAT DE FOUT! DEZE WAS NODIG.
 
 # ==========================================
-# 1. CONFIGURATIE & AUTHENTICATIE
+# 1. CONFIGURATIE
 # ==========================================
 
 st.set_page_config(page_title="Finny | Intelligent Finance", page_icon="💰", layout="wide")
@@ -26,7 +26,7 @@ def check_password():
             if os.path.exists(f"finny_logo.{ext}"):
                 st.image(f"finny_logo.{ext}", width=150)
                 break
-        st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal (v5.4 Auto-Fallback)</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal (v5.5 Debug)</h1>", unsafe_allow_html=True)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
@@ -37,121 +37,103 @@ def check_password():
         return True
 
 # ==========================================
-# 2. DATA LAAG
+# 2. DATA FUNCTIES
 # ==========================================
 
 @st.cache_data
 def load_knowledge_base():
     content = ""
     syllabus_extract = "" 
-    
     if os.path.exists("van_hattem_advies_profiel.txt"):
         try:
             with open("van_hattem_advies_profiel.txt", "r", encoding="utf-8") as f:
                 content += f"--- KLANTPROFIEL ---\n{f.read()}\n\n"
         except: pass
-            
     if os.path.exists("Finny_syllabus.txt"):
         try:
             with open("Finny_syllabus.txt", "r", encoding="utf-8") as f:
-                full_text = f.read()
-                content += f"--- SYLLABUS & RGS ---\n{full_text}\n\n"
-                syllabus_extract = full_text[:3000]
+                full = f.read()
+                content += f"--- SYLLABUS ---\n{full}\n\n"
+                syllabus_extract = full[:3000]
         except: pass
-            
     return content, syllabus_extract
 
 def execute_smart_query(intent, full_df):
     """
-    Slimme zoekfunctie met 'Auto-Fallback'.
-    Als zoeken in 2024 niks oplevert, zoekt hij automatisch in ALLE jaren.
+    Zoekt in CSV. Nu met 're' import gefixt, dus crasht niet meer.
     """
-    if full_df is None: return ""
+    if full_df is None: return "--- GEEN CSV BESTAND GELADEN ---"
     if intent.get('source') == 'PDF': return "" 
     
     try:
         df = full_df.copy()
         
-        # 1. Datum Conversie (Verbeterd voor NL CSVs: dayfirst=True)
-        date_col = next((c for c in df.columns if 'datum' in c.lower() or 'date' in c.lower()), None)
-        if date_col:
-            # dayfirst=True is cruciaal voor Nederlandse 01-02-2023 formaten!
-            df['dt_temp'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
-        else:
-            df['dt_temp'] = pd.NaT # Geen datum? Dan werkt datumfilter niet, maar tekstfilter wel.
-
-        # 2. Zoektermen Filter (Altijd toepassen)
-        terms = intent.get('search_terms', [])
-        filtered_df = df.copy()
-        
-        if terms:
-            text_cols = [c for c in df.columns if any(x in c.lower() for x in ['omschrijving', 'desc', 'naam', 'name', 'relatie', 'grootboek', 'dim1'])]
-            if text_cols:
-                pattern = '|'.join([re.escape(term) for term in terms])
-                mask = df[text_cols].astype(str).agg(' '.join, axis=1).str.contains(pattern, case=False, na=False)
-                filtered_df = df[mask]
-
-        # 3. Jaar Filter (MET FALLBACK LOGICA)
+        # 1. Datum Filter
+        # Fallback: Als Finny geen jaren geeft, pakken we alles.
         years = intent.get('years', [])
-        final_df = pd.DataFrame()
-        used_years_msg = ""
-
-        if years and date_col:
-            # Probeer eerst te filteren op de gevraagde jaren
-            final_df = filtered_df[filtered_df['dt_temp'].dt.year.isin(years)]
+        date_col = next((c for c in df.columns if 'datum' in c.lower() or 'date' in c.lower()), None)
+        
+        if date_col:
+            df['dt_temp'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
+            if years:
+                # Filter op jaar
+                df_year = df[df['dt_temp'].dt.year.isin(years)]
+                # Als jaarfilter resultaten oplevert, gebruik die. Anders val terug op alles (Fallback)
+                if len(df_year) > 0:
+                    df = df_year
+        
+        # 2. Tekst Filter (Cruciaal voor kosten vragen)
+        terms = intent.get('search_terms', [])
+        if terms:
+            # Zoek in alle tekst-achtige kolommen
+            text_cols = [c for c in df.columns if any(x in c.lower() for x in ['omschrijving', 'desc', 'naam', 'name', 'relatie', 'grootboek'])]
+            if text_cols:
+                # Maak veilige regex (voorkomt crash op leestekens)
+                pattern = '|'.join([re.escape(t) for t in terms])
+                mask = df[text_cols].astype(str).agg(' '.join, axis=1).str.contains(pattern, case=False, na=False)
+                df = df[mask]
+        
+        # 3. Resultaat
+        if len(df) > 0:
+            amount_col = next((c for c in df.columns if 'bedrag' in c.lower() or 'value' in c.lower()), None)
+            totaal = 0.0
+            if amount_col: totaal = df[amount_col].sum()
             
-            # *** DE HACK: Als we niks vinden, negeer het jaarfilter! ***
-            if len(final_df) == 0:
-                final_df = filtered_df # Pak alles wat matcht op tekst
-                if len(final_df) > 0:
-                    used_years_msg = "(Geen resultaat in gevraagde jaren, gezocht in hele historie)"
-            else:
-                used_years_msg = f"(Gefilterd op jaren: {years})"
-        else:
-            final_df = filtered_df
-            used_years_msg = "(Alle jaren)"
-
-        # 4. Resultaat opbouwen
-        if len(final_df) > 0:
-            amount_col = next((c for c in final_df.columns if 'bedrag' in c.lower() or 'value' in c.lower()), None)
-            totaal_bedrag = 0.0
-            if amount_col:
-                totaal_bedrag = final_df[amount_col].sum()
-            
-            if len(final_df) <= 50:
-                cols = [c for c in final_df.columns if c not in ['dt_temp']]
+            # Formatteren
+            if len(df) <= 50:
+                cols = [c for c in df.columns if c not in ['dt_temp']]
                 return f"""
-                --- CSV RESULTATEN {used_years_msg} ---
+                --- CSV RESULTAAT ---
                 Zoektermen: {terms}
-                Aantal transacties: {len(final_df)}
-                GEVERIFIEERD TOTAALBEDRAG: € {totaal_bedrag:.2f}
+                Jaren filter: {years if years else "Alle jaren"}
+                Aantal transacties: {len(df)}
+                GEVERIFIEERD TOTAALBEDRAG: € {totaal:.2f}
                 
                 Details:
-                {final_df[cols].to_string(index=False)}
+                {df[cols].to_string(index=False)}
                 """
             else:
-                desc_col = next((c for c in final_df.columns if 'omschrijving' in c.lower()), final_df.columns[0])
-                summary = final_df.groupby(desc_col)[amount_col].sum().sort_values().head(20).reset_index()
+                desc_col = next((c for c in df.columns if 'omschrijving' in c.lower()), df.columns[0])
+                summary = df.groupby(desc_col)[amount_col].sum().sort_values().head(20).reset_index()
                 return f"""
-                --- CSV SAMENVATTING {used_years_msg} ---
+                --- CSV SAMENVATTING ---
                 Zoektermen: {terms}
-                Aantal transacties: {len(final_df)}
-                GEVERIFIEERD TOTAALBEDRAG: € {totaal_bedrag:.2f}
+                Aantal transacties: {len(df)}
+                GEVERIFIEERD TOTAALBEDRAG: € {totaal:.2f}
                 
-                Top 20 Posten:
+                Top 20:
                 {summary.to_string(index=False)}
                 """
                 
-        return f"--- GEEN TRANSACTIES GEVONDEN VOOR: {terms} --- (Ook niet na zoeken in alle jaren)\n"
-    
+        return f"--- GEEN TRANSACTIES GEVONDEN VOOR: {terms} ---"
+
     except Exception as e:
-        return f"--- FOUT BIJ ANALYSEREN CSV: {e} ---"
+        return f"--- ERROR IN CSV QUERY: {e} ---"
 
 def get_pdf_context(intent):
-    if intent.get('source') == 'CSV': return "" 
+    if intent.get('source') == 'CSV': return ""
     content = ""
     pdfs = ["Van Hattem Advies B.V. - Jaarrekening 2024.pdf", "Van Hattem Advies B.V. - Jaarrekening 2023.pdf", "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"]
-    found = False
     for pdf in pdfs:
         if os.path.exists(pdf):
             try:
@@ -160,66 +142,70 @@ def get_pdf_context(intent):
                 for i, page in enumerate(reader.pages):
                     if i < 15: text += page.extract_text()
                 content += f"--- BRON: {pdf} ---\n{text[:6000]}\n\n"
-                found = True
             except: pass
-    if not found and intent.get('source') == 'PDF': return "--- LET OP: Geen jaarrekeningen gevonden. ---"
     return content
 
 # ==========================================
-# 3. INTELLIGENTIE (PROMPTS)
+# 3. PROMPTS
 # ==========================================
 
-def clean_json_response(response_text):
-    return response_text.replace("```json", "").replace("```", "").strip()
+def clean_json(text):
+    return text.replace("```json", "").replace("```", "").strip()
 
-def run_finny_mini(client, question, syllabus_extract):
-    system_prompt = f"""
+def run_finny_mini(client, question, syllabus):
+    """
+    De Strateeg. Vertaalt vraag naar zoekopdracht.
+    """
+    prompt = f"""
     Je bent Finny-Mini (v9.7). Query Translator.
-    Huidige datum: {datetime.now().strftime("%Y-%m-%d")}
+    Datum: {datetime.now().strftime("%Y-%m-%d")}
     
-    Kennis: {syllabus_extract}
+    Kennis: {syllabus}
     
-    Opdracht:
-    1. Vertaal vraag naar zoektermen (RGS/Synoniemen).
-    2. Bepaal jaren.
-    3. Kies bron: CSV (Transacties) of PDF (Jaarrekening).
+    Opdracht: Vertaal vraag naar RGS-zoektermen.
+    Voorbeeld: "Autokosten" -> ["Brandstof", "Garage", "Wegenbelasting", "4100"]
     
-    Output JSON only.
+    Output JSON only:
+    {{
+        "source": "CSV" | "PDF" | "BOTH",
+        "years": [int],
+        "search_terms": [strings],
+        "reasoning": "string"
+    }}
     """
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
             response_format={"type": "json_object"},
             temperature=0
         )
-        return json.loads(clean_json_response(response.choices[0].message.content))
+        return json.loads(clean_json(res.choices[0].message.content))
     except:
-        return {"source": "BOTH", "years": [], "search_terms": []}
+        return {"source": "BOTH", "years": [], "search_terms": [], "reasoning": "Error in Mini"}
 
 def run_finny_main(client, question, context):
-    system_prompt = f"""
-    Je bent Finny (v9.9).
-    
+    prompt = f"""
+    Je bent Finny.
     Data Context:
     {context}
     
-    Instructies:
-    1. Gebruik de GEVERIFIEERDE TOTALEN uit de CSV-tekst. Reken niet zelf.
-    2. Als er staat "(Geen resultaat in gevraagde jaren, gezocht in hele historie)", meld dit dan aan de gebruiker ("Ik heb gekeken in alle jaren omdat er in 2024 geen data was").
-    3. Wees zakelijk en direct.
+    Regels:
+    1. Gebruik GEVERIFIEERDE TOTALEN uit de CSV-tekst. Reken niet zelf.
+    2. Als CSV leeg is, kijk in PDF.
+    3. Geef direct antwoord.
     """
     try:
-        completion = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
             temperature=0
         )
-        return completion.choices[0].message.content
+        return res.choices[0].message.content
     except Exception as e: return str(e)
 
 # ==========================================
-# 4. APP LOOP
+# 4. APP
 # ==========================================
 
 if check_password():
@@ -230,10 +216,10 @@ if check_password():
         st.error("API Key ontbreekt")
         st.stop()
 
+    # Laad CSV
     csv_df = None
     if os.path.exists("133700 FinTransactionSearch all 5jr.csv"):
         try:
-            # dayfirst=True is belangrijk voor NL data!
             csv_df = pd.read_csv("133700 FinTransactionSearch all 5jr.csv", sep=";", on_bad_lines='skip', low_memory=False)
         except: pass
     
@@ -245,8 +231,8 @@ if check_password():
                 st.image(f"finny_logo.{ext}", width=150)
                 break
         st.markdown("### 🏢 Van Hattem Advies B.V.")
-        if csv_df is not None: st.success("✅ Twinfield Live (v5.4)")
-        else: st.error("❌ Data Connectie Fout")
+        if csv_df is not None: st.success("✅ Twinfield Live")
+        else: st.error("❌ Data Fout")
         st.markdown("---")
         if st.button("Reset"): st.rerun()
 
@@ -262,19 +248,29 @@ if check_password():
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
 
+        # STAP 1: MINI (Strategie)
         with st.chat_message("assistant"):
             with st.spinner("Analyseren..."):
                 intent = run_finny_mini(client, prompt, syllabus_extract)
                 
-                # Debug info
-                debug_msg = f"🧠 **Strategie:** {intent.get('source')} | Zoekt: {intent.get('search_terms')}"
-                st.info(debug_msg)
+                # --- HIER IS DE VISUELE DEBUGGER VOOR JOU ---
+                with st.expander("🕵️ Finny's Denkproces (Debug)", expanded=True):
+                    st.write(f"**Strategie:** {intent.get('reasoning', 'Geen uitleg')}")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Bron", intent.get('source'))
+                    col2.metric("Jaren", str(intent.get('years')))
+                    col3.metric("Zoektermen", str(intent.get('search_terms')))
+                # --------------------------------------------
 
                 context_data = static_context
                 source = intent.get('source', 'BOTH')
                 
                 if source in ['CSV', 'BOTH']:
-                    context_data += execute_smart_query(intent, csv_df)
+                    csv_result = execute_smart_query(intent, csv_df)
+                    context_data += csv_result
+                    # Debug: Laat zien als CSV faalt
+                    if "ERROR" in csv_result or "GEEN TRANSACTIES" in csv_result:
+                        st.caption(f"⚠️ CSV Resultaat: {csv_result.strip()[:100]}...")
                 
                 if source in ['PDF', 'BOTH']:
                     context_data += get_pdf_context(intent)
