@@ -1,8 +1,9 @@
 streamlit
 pandas
 langchain
-langchain_experimental
-langchain_openai
+langchain-experimental
+langchain-openai
 pypdf
 tabulate
 openpyxl
+python-dotenv
