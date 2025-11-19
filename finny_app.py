@@ -68,14 +68,13 @@ if check_password():
 
         response_text = ""
 
-        # --- LOGICA: PANDAS AI of PDF LEZER ---
+        # --- LOGICA ---
         
-        # CSV Vraag (Gebruik PandasAI - veel stabieler)
+        # CSV Vraag (PandasAI met gpt-4o-mini)
         if csv_file and any(x in prompt.lower() for x in ["hoeveel", "bedrag", "totaal", "som", "kosten", "omzet", "grootste", "transactie"]):
             with st.chat_message("assistant"):
                 with st.spinner("🔍 Finny duikt in de transacties..."):
                     try:
-                        # CSV inladen
                         csv_file.seek(0)
                         try:
                             df = pd.read_csv(csv_file)
@@ -83,28 +82,25 @@ if check_password():
                             csv_file.seek(0)
                             df = pd.read_csv(csv_file, sep=';')
                         
-                        # PandasAI instellen (De nieuwe motor)
-                        llm = OpenAI(api_token=os.environ["OPENAI_API_KEY"])
+                        # HIER IS DE WIJZIGING NAAR GPT-4o-MINI
+                        llm = OpenAI(api_token=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
                         sdf = SmartDataframe(df, config={"llm": llm})
                         
-                        # Vraag stellen
                         response = sdf.chat(prompt)
                         response_text = str(response)
                         
                     except Exception as e:
                         response_text = f"Fout bij lezen CSV: {e}"
 
-        # PDF Vraag (Simpele OpenAI call)
+        # PDF Vraag (OpenAI call met gpt-4o-mini)
         elif pdf_file:
             with st.chat_message("assistant"):
                 with st.spinner("📄 Finny leest de jaarrekening..."):
-                    # PDF lezen
                     text = ""
                     pdf_reader = PdfReader(pdf_file)
                     for page in pdf_reader.pages:
                         text += page.extract_text()
                     
-                    # Vraag aan LLM
                     from openai import OpenAI as OpenAIClient
                     client = OpenAIClient()
                     
@@ -112,11 +108,12 @@ if check_password():
                         {"role": "system", "content": f"Je bent een accountant. Antwoord op basis van deze jaarrekening:\n\n{text[:30000]}"},
                         {"role": "user", "content": prompt}
                     ]
-                    completion = client.chat.completions.create(model="gpt-4o", messages=msg_history)
+                    # HIER IS DE WIJZIGING NAAR GPT-4o-MINI
+                    completion = client.chat.completions.create(model="gpt-4o-mini", messages=msg_history)
                     response_text = completion.choices[0].message.content
 
         else:
-            response_text = "Zorg dat je een bestand hebt geüpload (PDF of CSV) voordat je een vraag stelt."
+            response_text = "Zorg dat je een bestand hebt geüpload (PDF of CSV)."
 
         st.chat_message("assistant").write(response_text)
         st.session_state.messages.append({"role": "assistant", "content": response_text})
