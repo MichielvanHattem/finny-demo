@@ -14,7 +14,6 @@ import re
 st.set_page_config(page_title="Finny | Intelligent Finance", page_icon="💰", layout="wide")
 
 def check_password():
-    """Beveiligde toegang."""
     def password_entered():
         if st.session_state["password"] == "demo2025":
             st.session_state["password_correct"] = True
@@ -23,12 +22,11 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # Logo check (veilig)
         for ext in ["jpg", "jpeg", "png"]:
             if os.path.exists(f"finny_logo.{ext}"):
                 st.image(f"finny_logo.{ext}", width=150)
                 break
-        st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal (v5.3 Stable)</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal (v5.4 Auto-Fallback)</h1>", unsafe_allow_html=True)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
@@ -39,171 +37,154 @@ def check_password():
         return True
 
 # ==========================================
-# 2. DATA LAAG (ROBUUST)
+# 2. DATA LAAG
 # ==========================================
 
 @st.cache_data
 def load_knowledge_base():
-    """
-    Laadt de statische kennis. 
-    FIX: Variabelen worden nu vooraf geïnitialiseerd om UnboundLocalError te voorkomen.
-    """
     content = ""
     syllabus_extract = "" 
     
-    # 1. Profiel laden
     if os.path.exists("van_hattem_advies_profiel.txt"):
         try:
             with open("van_hattem_advies_profiel.txt", "r", encoding="utf-8") as f:
                 content += f"--- KLANTPROFIEL ---\n{f.read()}\n\n"
-        except Exception as e:
-            print(f"Fout bij laden profiel: {e}")
+        except: pass
             
-    # 2. Syllabus laden
     if os.path.exists("Finny_syllabus.txt"):
         try:
             with open("Finny_syllabus.txt", "r", encoding="utf-8") as f:
                 full_text = f.read()
                 content += f"--- SYLLABUS & RGS ---\n{full_text}\n\n"
-                syllabus_extract = full_text[:3000] # Voor de Mini prompt
-        except Exception as e:
-            print(f"Fout bij laden syllabus: {e}")
+                syllabus_extract = full_text[:3000]
+        except: pass
             
     return content, syllabus_extract
 
 def execute_smart_query(intent, full_df):
     """
-    Voert de zoekopdracht uit in Python om token-overflow en rekenfouten te voorkomen.
+    Slimme zoekfunctie met 'Auto-Fallback'.
+    Als zoeken in 2024 niks oplevert, zoekt hij automatisch in ALLE jaren.
     """
     if full_df is None: return ""
-    if intent.get('source') == 'PDF': return "" # Skip CSV logica als PDF gevraagd is
+    if intent.get('source') == 'PDF': return "" 
     
     try:
         df = full_df.copy()
         
-        # A. Datum Filter
-        years = intent.get('years', [])
-        # Als geen jaar gevonden is, en bron is CSV, pakken we veiligheidshalve het huidige en vorige jaar
-        if not years: 
-            curr_year = datetime.now().year
-            years = [curr_year, curr_year - 1]
-        
+        # 1. Datum Conversie (Verbeterd voor NL CSVs: dayfirst=True)
         date_col = next((c for c in df.columns if 'datum' in c.lower() or 'date' in c.lower()), None)
         if date_col:
-            df['dt_temp'] = pd.to_datetime(df[date_col], errors='coerce')
-            df = df[df['dt_temp'].dt.year.isin(years)]
-        
-        # B. Tekst/RGS Filter (Finny-Mini 9.6 Logic)
+            # dayfirst=True is cruciaal voor Nederlandse 01-02-2023 formaten!
+            df['dt_temp'] = pd.to_datetime(df[date_col], errors='coerce', dayfirst=True)
+        else:
+            df['dt_temp'] = pd.NaT # Geen datum? Dan werkt datumfilter niet, maar tekstfilter wel.
+
+        # 2. Zoektermen Filter (Altijd toepassen)
         terms = intent.get('search_terms', [])
+        filtered_df = df.copy()
+        
         if terms:
             text_cols = [c for c in df.columns if any(x in c.lower() for x in ['omschrijving', 'desc', 'naam', 'name', 'relatie', 'grootboek', 'dim1'])]
             if text_cols:
-                # Maak een veilige string kolom voor de zoekactie
-                pattern = '|'.join([re.escape(term) for term in terms]) # Escape voorkomt regex errors
+                pattern = '|'.join([re.escape(term) for term in terms])
                 mask = df[text_cols].astype(str).agg(' '.join, axis=1).str.contains(pattern, case=False, na=False)
-                df = df[mask]
-                
-        # C. Aggregatie
-        if len(df) > 0:
-            amount_col = next((c for c in df.columns if 'bedrag' in c.lower() or 'value' in c.lower()), None)
+                filtered_df = df[mask]
+
+        # 3. Jaar Filter (MET FALLBACK LOGICA)
+        years = intent.get('years', [])
+        final_df = pd.DataFrame()
+        used_years_msg = ""
+
+        if years and date_col:
+            # Probeer eerst te filteren op de gevraagde jaren
+            final_df = filtered_df[filtered_df['dt_temp'].dt.year.isin(years)]
+            
+            # *** DE HACK: Als we niks vinden, negeer het jaarfilter! ***
+            if len(final_df) == 0:
+                final_df = filtered_df # Pak alles wat matcht op tekst
+                if len(final_df) > 0:
+                    used_years_msg = "(Geen resultaat in gevraagde jaren, gezocht in hele historie)"
+            else:
+                used_years_msg = f"(Gefilterd op jaren: {years})"
+        else:
+            final_df = filtered_df
+            used_years_msg = "(Alle jaren)"
+
+        # 4. Resultaat opbouwen
+        if len(final_df) > 0:
+            amount_col = next((c for c in final_df.columns if 'bedrag' in c.lower() or 'value' in c.lower()), None)
             totaal_bedrag = 0.0
             if amount_col:
-                totaal_bedrag = df[amount_col].sum()
+                totaal_bedrag = final_df[amount_col].sum()
             
-            # Korte lijst: Details tonen
-            if len(df) <= 50:
-                cols = [c for c in df.columns if c not in ['dt_temp']]
+            if len(final_df) <= 50:
+                cols = [c for c in final_df.columns if c not in ['dt_temp']]
                 return f"""
-                --- CSV RESULTATEN (Gefilterd op {terms} in {years}) ---
-                Aantal transacties: {len(df)}
+                --- CSV RESULTATEN {used_years_msg} ---
+                Zoektermen: {terms}
+                Aantal transacties: {len(final_df)}
                 GEVERIFIEERD TOTAALBEDRAG: € {totaal_bedrag:.2f}
                 
                 Details:
-                {df[cols].to_string(index=False)}
+                {final_df[cols].to_string(index=False)}
                 """
             else:
-                # Lange lijst: Samenvatten
-                desc_col = next((c for c in df.columns if 'omschrijving' in c.lower()), df.columns[0])
-                summary = df.groupby(desc_col)[amount_col].sum().sort_values().head(20).reset_index()
+                desc_col = next((c for c in final_df.columns if 'omschrijving' in c.lower()), final_df.columns[0])
+                summary = final_df.groupby(desc_col)[amount_col].sum().sort_values().head(20).reset_index()
                 return f"""
-                --- CSV SAMENVATTING (Gefilterd op {terms} in {years}) ---
-                Aantal transacties: {len(df)} (Te veel voor details, hier is de top 20)
+                --- CSV SAMENVATTING {used_years_msg} ---
+                Zoektermen: {terms}
+                Aantal transacties: {len(final_df)}
                 GEVERIFIEERD TOTAALBEDRAG: € {totaal_bedrag:.2f}
                 
                 Top 20 Posten:
                 {summary.to_string(index=False)}
                 """
                 
-        return f"--- GEEN TRANSACTIES GEVONDEN VOOR: {terms} IN {years} ---\n"
+        return f"--- GEEN TRANSACTIES GEVONDEN VOOR: {terms} --- (Ook niet na zoeken in alle jaren)\n"
     
     except Exception as e:
         return f"--- FOUT BIJ ANALYSEREN CSV: {e} ---"
 
 def get_pdf_context(intent):
-    """Haalt PDF data op. Faalt stil (geen crash) als bestanden missen."""
     if intent.get('source') == 'CSV': return "" 
-    
     content = ""
-    pdfs = [
-        "Van Hattem Advies B.V. - Jaarrekening 2024.pdf", 
-        "Van Hattem Advies B.V. - Jaarrekening 2023.pdf", 
-        "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"
-    ]
+    pdfs = ["Van Hattem Advies B.V. - Jaarrekening 2024.pdf", "Van Hattem Advies B.V. - Jaarrekening 2023.pdf", "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"]
     found = False
     for pdf in pdfs:
         if os.path.exists(pdf):
             try:
                 reader = PdfReader(pdf)
                 text = ""
-                # Scan eerste 15 pagina's voor balans/W&V
                 for i, page in enumerate(reader.pages):
                     if i < 15: text += page.extract_text()
                 content += f"--- BRON: {pdf} ---\n{text[:6000]}\n\n"
                 found = True
             except: pass
-            
-    if not found and intent.get('source') == 'PDF':
-        return "--- LET OP: Geen jaarrekeningen gevonden op het systeem. ---"
+    if not found and intent.get('source') == 'PDF': return "--- LET OP: Geen jaarrekeningen gevonden. ---"
     return content
 
 # ==========================================
-# 3. INTELLIGENTIE LAAG (PROMPTS)
+# 3. INTELLIGENTIE (PROMPTS)
 # ==========================================
 
 def clean_json_response(response_text):
-    """
-    Veiligheidsfunctie: Soms zet GPT ```json ... ``` om de output. 
-    Dit haalt dat weg om crashes te voorkomen.
-    """
-    clean_text = response_text.replace("```json", "").replace("```", "").strip()
-    return clean_text
+    return response_text.replace("```json", "").replace("```", "").strip()
 
 def run_finny_mini(client, question, syllabus_extract):
-    """
-    FINNY-MINI (Versie 9.6/9.7)
-    Vertaalt vragen naar zoektermen en RGS codes.
-    """
     system_prompt = f"""
-    Je bent Finny-Mini. Je bent een query-translator, GEEN chatbot.
+    Je bent Finny-Mini (v9.7). Query Translator.
+    Huidige datum: {datetime.now().strftime("%Y-%m-%d")}
     
-    HUIDIGE DATUM: {datetime.now().strftime("%Y-%m-%d")}
+    Kennis: {syllabus_extract}
     
-    KENNIS (Syllabus/RGS):
-    {syllabus_extract}
+    Opdracht:
+    1. Vertaal vraag naar zoektermen (RGS/Synoniemen).
+    2. Bepaal jaren.
+    3. Kies bron: CSV (Transacties) of PDF (Jaarrekening).
     
-    OPDRACHT:
-    1. Analyseer de intentie: CSV (Details/Geld) of PDF (Inzicht/Balans)?
-    2. Vertaal de vraag naar concrete zoektermen. Denk aan RGS codes als die in de syllabus staan.
-       Voorbeeld: "Auto" -> ["Brandstof", "Garage", "4100", "Wegenbelasting"]
-    3. Bepaal jaren. "Vorig jaar" is rekenwerk t.o.v. huidige datum.
-    
-    OUTPUT (JSON ONLY):
-    {{
-        "source": "CSV" | "PDF" | "BOTH",
-        "years": [int],
-        "search_terms": [strings],
-        "reasoning": "string"
-    }}
+    Output JSON only.
     """
     try:
         response = client.chat.completions.create(
@@ -212,30 +193,21 @@ def run_finny_mini(client, question, syllabus_extract):
             response_format={"type": "json_object"},
             temperature=0
         )
-        cleaned_json = clean_json_response(response.choices[0].message.content)
-        return json.loads(cleaned_json)
-    except Exception as e:
-        # Fallback strategie als Mini faalt
-        print(f"Mini Error: {e}")
+        return json.loads(clean_json_response(response.choices[0].message.content))
+    except:
         return {"source": "BOTH", "years": [], "search_terms": []}
 
 def run_finny_main(client, question, context):
-    """
-    FINNY MAIN (Versie 9.9)
-    Het gezicht naar de klant.
-    """
     system_prompt = f"""
-    Je bent Finny, de financiële AI-partner.
+    Je bent Finny (v9.9).
     
-    DATA CONTEXT:
+    Data Context:
     {context}
     
-    REGELS (PROMPT 9.9):
-    1. Conclusie Eerst: Geef direct antwoord.
-    2. Feiten: Gebruik de 'GEVERIFIEERD TOTAALBEDRAG' cijfers uit de context. Ga NIET zelf optellen.
-    3. Bronvermelding: Zeg waar je het vandaan hebt.
-    4. Opmaak: Markdown tabellen.
-    5. Geen data? Zeg het eerlijk.
+    Instructies:
+    1. Gebruik de GEVERIFIEERDE TOTALEN uit de CSV-tekst. Reken niet zelf.
+    2. Als er staat "(Geen resultaat in gevraagde jaren, gezocht in hele historie)", meld dit dan aan de gebruiker ("Ik heb gekeken in alle jaren omdat er in 2024 geen data was").
+    3. Wees zakelijk en direct.
     """
     try:
         completion = client.chat.completions.create(
@@ -244,11 +216,10 @@ def run_finny_main(client, question, context):
             temperature=0
         )
         return completion.choices[0].message.content
-    except Exception as e:
-        return f"Fout bij genereren antwoord: {e}"
+    except Exception as e: return str(e)
 
 # ==========================================
-# 4. MAIN APP LOOP
+# 4. APP LOOP
 # ==========================================
 
 if check_password():
@@ -256,34 +227,31 @@ if check_password():
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
         client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     else:
-        st.error("API Key ontbreekt. Stel deze in bij 'Secrets'.")
+        st.error("API Key ontbreekt")
         st.stop()
 
-    # Data Laden (Eénmalig, veilig)
     csv_df = None
     if os.path.exists("133700 FinTransactionSearch all 5jr.csv"):
         try:
+            # dayfirst=True is belangrijk voor NL data!
             csv_df = pd.read_csv("133700 FinTransactionSearch all 5jr.csv", sep=";", on_bad_lines='skip', low_memory=False)
-        except Exception as e:
-             st.error(f"Fout bij laden CSV: {e}")
+        except: pass
     
     static_context, syllabus_extract = load_knowledge_base()
 
-    # Sidebar
     with st.sidebar:
         for ext in ["jpg", "jpeg", "png"]:
             if os.path.exists(f"finny_logo.{ext}"):
                 st.image(f"finny_logo.{ext}", width=150)
                 break
         st.markdown("### 🏢 Van Hattem Advies B.V.")
-        if csv_df is not None: st.success("✅ Twinfield Live (v5.3)")
+        if csv_df is not None: st.success("✅ Twinfield Live (v5.4)")
         else: st.error("❌ Data Connectie Fout")
         st.markdown("---")
         if st.button("Reset"): st.rerun()
 
     st.title("👋 Goedemiddag, Michiel.")
 
-    # Chat Interface
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -294,22 +262,15 @@ if check_password():
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
 
-        # STAP 1: FINNY-MINI (Intentie)
         with st.chat_message("assistant"):
-            with st.spinner("Finny vertaalt vraag..."):
+            with st.spinner("Analyseren..."):
                 intent = run_finny_mini(client, prompt, syllabus_extract)
                 
-                # Debug info (SaaS ervaring)
-                debug_msg = f"🧠 **Strategie:** {intent.get('source', 'Onbekend')}"
-                if intent.get('years'): debug_msg += f" | Jaren: {intent['years']}"
-                if intent.get('search_terms'): debug_msg += f" | Zoektermen: {intent['search_terms']}"
+                # Debug info
+                debug_msg = f"🧠 **Strategie:** {intent.get('source')} | Zoekt: {intent.get('search_terms')}"
                 st.info(debug_msg)
 
-            # STAP 2: DATA OPHALEN (Python Engine)
-            with st.spinner("Data verzamelen..."):
-                # Altijd profiel/syllabus als basis
                 context_data = static_context
-                
                 source = intent.get('source', 'BOTH')
                 
                 if source in ['CSV', 'BOTH']:
@@ -318,8 +279,6 @@ if check_password():
                 if source in ['PDF', 'BOTH']:
                     context_data += get_pdf_context(intent)
 
-            # STAP 3: ANTWOORD (Finny Main)
-            with st.spinner("Finny formuleert antwoord..."):
                 response = run_finny_main(client, prompt, context_data)
                 st.write(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
