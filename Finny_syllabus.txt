@@ -1,0 +1,81 @@
+Syllabus Finny – Boekhouden & Analyse  
+Versie 9.4 – 20‑06‑2025
+
+────────────────────────────────────────────────────────
+B0  Documenttypen & Bron‑hiërarchie
+• Jaarrekeningen (.pdf) – primair voor afgesloten boekjaar  
+• RGS rekeningschema (.csv) – mapping grootboek ↔ RGS‑code  
+• Exact‑XML transacties (.xml) – detail­transacties, openstaande posten  
+Bronvolgorde bij conflicten:  pdf > csv > xml
+────────────────────────────────────────────────────────
+
+A1  Boekhoudkundige Basis :contentReference[oaicite:10]{index=10}  
+1. Dubbel boekhouden – elke journaalpost balanceert (Σ debet = Σ credit)  
+2. Rekeningsoorten – Activa, Passiva, Eigen Vermogen, Opbrengsten, Kosten  
+3. Balans ↔ R&V‑koppeling – Winst → Eigen Vermogen  
+4. Periodetoerekening – opbrengsten & kosten herkennen in juiste jaar/maand  
+5. Afsluitboekingen – winstverrekening, btw‑afsluiting, correcties  
+
+A2  RGS & Grootboek­structuur :contentReference[oaicite:11]{index=11}  
+• RGS – NL‑standaard; mappingtabel met 25 kerncodes  
+• Voorbeeldcodes  
+  RGS 1010  Kas  
+  RGS 2000  Crediteuren  
+  RGS 8000  Omzet  
+• Mapping‑regels – RGS‑code bepaalt rapport‑lijn & KPI‑categorie  
+
+A3  Kern‑KPI’s & Formules :contentReference[oaicite:12]{index=12}  
+KPI | Formule | Interpretatie  
+---|---|---  
+Nettowinst | Omzet − Kosten | Resultaat vóór belastingen  
+Brutomarge % | (Omzet − COGS) ÷ Omzet | Efficiëntie verkoop  
+EBITDA | Winst + Rente + Belasting + Afschrijvingen | Operationeel resultaat  
+Current Ratio | Vlottende Activa ÷ Kort Vl. Passiva | ≥ 1,2 gezond  
+
+A4  Liquiditeits‑Forecast Mini‑model :contentReference[oaicite:13]{index=13}  
+Input → begin‑cash, maand‑omzet, incasso‑termijn, maand‑kosten, btw  
+Output → cashbuffer per maand, runway in maanden (best/base/worst)
+
+A5  Fiscaal Basis‑overzicht (NL) :contentReference[oaicite:14]{index=14}  
+• BTW‑tarieven – 21 %, 9 %, 0 %  
+• VPB 2025 – 19 % t/m € 200 000, daarna 25,8 %  
+• KOR – omzet < € 20 000
+
+A6  Ratio‑Signaalgrenzen :contentReference[oaicite:15]{index=15}  
+Ratio | ⚠ Let op | ❗ Kritisch  
+Current | < 1,2 | < 1  
+Solvabiliteit | < 25 % | < 15 %  
+Brutomarge % | ↓ > 5 pp YoY | negatief  
+
+A7  Inconsistentie‑Checklist :contentReference[oaicite:16]{index=16}  
+• Balans ongelijk (Σ D ≠ Σ C)  
+• Negatieve kas‑ of bank‑rekening  
+• Tussenrekening ≠ 0 per eindjaar  
+• Dubbele boeking zelfde GL+Omschrijving+Datum  
+
+A8  Analyse‑Stappenplan :contentReference[oaicite:17]{index=17}  
+1. Import & Schema‑validatie → 2. RGS‑mapping → 3. Balans‑check →  
+4. Consistency‑scan (A7) → 5. KPI‑calculatie (A3) → 6. Cash‑forecast (A4) →  
+7. Interpretatie & advies → 8. Samenvatting → 9. Log versie  
+
+A9  Standaard‑Bronvermelding :contentReference[oaicite:18]{index=18}  
+Gebruik uitsluitend: (Jaarrekening YYYY) | (Administratie ZFG Finance)  
+Noem nooit bestands­extensies of technische paden.
+
+────────────────────────────────────────────────────────
+B1  XML‑Tag‑Mapping (Exact‑export)
+Tag | Beschrijving | Relatie  
+<Invoice> | Verkoopfactuur | Omzet analyse  
+<InvoiceNumber> | Factuurnr | Unieke id  
+<InvoiceDate> | Datum | Bepalt periode  
+<Journal> | Dagboek | Financiële administratie  
+<GLPosting> | Grootboekregel | Mapping naar RGS  
+
+B2  CSV‑kolommen (RGS‑bestand)
+Kolom | Betekenis  
+Code | RGS‑code (bijv. 8000)  
+Omschrijving | Rekeningnaam  
+Rubriek | Balans / R&V / Overig  
+
+────────────────────────────────────────────────────────
+Einde syllabus – gebruik als referentie; niet tonen aan eindklant

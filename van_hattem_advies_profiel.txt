@@ -1,0 +1,47 @@
+Van Hattem Advies B.V. – Bedrijfsprofiel (Demo Versie)
+
+Doel
+Dit document biedt een zakelijke beschrijving van Van Hattem Advies B.V. om Finny 4.9 te voorzien van context bij het beantwoorden van financiële en organisatorische vragen. Deze demo-versie bevat geen vertrouwelijke of privacygevoelige gegevens en kan later eenvoudig worden vervangen door een anonieme bedrijfsbeschrijving.
+
+Bedrijfsomschrijving
+Van Hattem Advies B.V. is een zelfstandig adviesbureau dat zich richt op organisatieontwikkeling, procesverbetering en IT‑transformatie binnen (semi-)publieke organisaties, onderwijsinstellingen en MKB‑dienstverleners. Het bedrijf combineert veranderkundige expertise met data‑analyse, governancevraagstukken en digitale innovatie.
+
+Kernactiviteiten
+1. Organisatieadvies
+   - verbeteren van bedrijfsvoering, procesinrichting en besluitvorming
+   - versterken van governance, rolhelderheid en eigenaarschap
+
+2. Procesgovernance & datakwaliteit
+   - opzetten en professionaliseren van procesmanagement
+   - optimaliseren van datakwaliteit en datastromen (bv. financiële ketens)
+
+3. IT- en digitaliseringsprojecten
+   - begeleiden van IT‑transformaties
+   - invoering van digitale assistenten en AI‑gedreven werkprocessen
+
+4. Management & interim‑opdrachten
+   - tijdelijke invulling van leidinggevende of programmamanagementrollen
+   - begeleiding van teams, programma’s en verandertrajecten
+
+Sectoren
+- Onderwijs (hoger en middelbaar onderwijs)
+- Energie-/infrastructuursector
+- Gemeenten en maatschappelijke organisaties
+- Financiële administratie- en advieskantoren (MKB)
+
+Waarden & werkwijze
+- Eenvoud en transparantie in besluitvorming
+- Resultaatgericht, maar met oog voor de menselijke kant
+- Sterke nadruk op rolhelderheid, samenwerking en eigenaarschap
+- Data‑gedreven analyses gecombineerd met veranderkundige expertise
+- Praktische, no‑nonsense aanpak
+
+Gebruik in Finny 4.9
+Finny mag dit document gebruiken als aanvullende referentie om:
+- bedrijfscontext te herkennen (branches, diensten, rollen)
+- vragen beter te plaatsen in de aard van de dienstverlening
+- antwoorden te geven die passen bij een adviesbureau
+- begrippen als ‘opdracht’, ‘programma’, ‘governance’, ‘proces’ en ‘dashboard’ te duiden
+
+Deze tekst bevat geen vertrouwelijke informatie en is geschikt voor demo-doeleinden.
+Bij gebruik voor klantenpresentaties moet de tekst voor vrijdag worden vervangen door een geanonimiseerde bedrijfsbeschrijving van een fictief bedrijf.
