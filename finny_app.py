@@ -17,106 +17,97 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # LOGO op inlogpagina (indien aanwezig)
-        try:
-            st.image("finny_logo.png", width=150)
-        except:
-            pass # Geen logo? Geen probleem.
-            
+        # Probeer logo te tonen, faal stil als het niet lukt
+        if os.path.exists("finny_logo.jpg"):
+            st.image("finny_logo.jpg", width=150)
+        
         st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal</h1>", unsafe_allow_html=True)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        try:
-            st.image("finny_logo.png", width=150)
-        except:
-            pass
+        if os.path.exists("finny_logo.jpg"):
+            st.image("finny_logo.jpg", width=150)
         st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         st.error("Onjuist wachtwoord")
         return False
     else:
         return True
 
-# --- DATA INLADEN (ACHTER DE SCHERMEN) ---
+# --- DATA INLADEN ---
 @st.cache_data
 def load_demo_data():
     context = ""
     
-    # 1. KLANTPROFIEL & SYLLABUS
-    try:
-        with open("van_hattem_advies_profiel.txt", "r", encoding="utf-8") as f:
-            context += f"--- KLANTPROFIEL ---\n{f.read()}\n\n"
-    except: pass
+    # Hulpfunctie om veilig te lezen
+    def read_safely(filename, label, is_csv=False, is_pdf=False, sep=";"):
+        content = ""
+        if os.path.exists(filename):
+            try:
+                if is_csv:
+                    df = pd.read_csv(filename, sep=sep, on_bad_lines='skip', low_memory=False)
+                    content = f"--- {label} ---\n{df.head(3000).to_string(index=False)}\n\n"
+                elif is_pdf:
+                    reader = PdfReader(filename)
+                    text = ""
+                    for page in reader.pages:
+                        text += page.extract_text()
+                    content = f"--- {label} ({filename}) ---\n{text[:15000]}\n\n"
+                else: # TXT
+                    with open(filename, "r", encoding="utf-8") as f:
+                        content = f"--- {label} ---\n{f.read()}\n\n"
+            except: pass
+        return content
 
-    try:
-        with open("Finny_syllabus.txt", "r", encoding="utf-8") as f:
-            context += f"--- FINNY SYLLABUS (OPERATIELE REGELS) ---\n{f.read()}\n\n"
-    except: pass
-
-    # 2. TRANSACTIES (CSV)
-    try:
-        # Lees de 5-jaars historie
-        df_trans = pd.read_csv("133700 FinTransactionSearch all 5jr.csv", sep=";", on_bad_lines='skip', low_memory=False)
-        # We pakken iets meer regels voor betere historie, let op token limiet
-        csv_text = df_trans.head(4000).to_string(index=False) 
-        context += f"--- TRANSACTIE DATA (CSV) ---\n{csv_text}\n\n"
-        
-        df_ledger = pd.read_csv("133700 Standaard Rekeningschema Template FinGLAccountSearch.csv", sep="\t", on_bad_lines='skip')
-        ledger_text = df_ledger.to_string(index=False)
-        context += f"--- REKENINGSCHEMA ---\n{ledger_text}\n\n"
-    except Exception as e:
-        st.error(f"Fout bij laden CSV: {e}")
-
-    # 3. JAARREKENINGEN (PDF) - NU ALLE DRIE DE JAREN
-    pdf_files = [
+    # Bestandsnamen EXACT zoals op GitHub
+    context += read_safely("van_hattem_advies_profiel.txt", "KLANTPROFIEL")
+    context += read_safely("Finny_syllabus.txt", "SYLLABUS")
+    context += read_safely("133700 FinTransactionSearch all 5jr.csv", "TRANSACTIES", is_csv=True, sep=";")
+    context += read_safely("133700 Standaard Rekeningschema Template FinGLAccountSearch.csv", "REKENINGSCHEMA", is_csv=True, sep="\t")
+    
+    pdfs = [
         "Van Hattem Advies B.V. - Jaarrekening 2024.pdf",
         "Van Hattem Advies B.V. - Jaarrekening 2023.pdf",
-        "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"  # Toegevoegd!
+        "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"
     ]
-    
-    for pdf_file in pdf_files:
-        try:
-            reader = PdfReader(pdf_file)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text()
-            # Voeg jaar toe aan context label
-            context += f"--- INHOUD BESTAND: {pdf_file} ---\n{text[:15000]}\n\n" 
-        except Exception as e:
-            st.warning(f"Kon {pdf_file} niet vinden op GitHub.")
-            
+    for pdf in pdfs:
+        context += read_safely(pdf, "JAARREKENING", is_pdf=True)
+
     return context
 
 if check_password():
-    # API Setup
     if "OPENAI_API_KEY" in st.secrets:
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
         client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     else:
-        st.error("API Key ontbreekt in Streamlit Secrets.")
+        st.error("API Key ontbreekt")
         st.stop()
 
-    # --- SIDEBAR ---
     with st.sidebar:
-        try:
-            st.image("finny_logo.png", width=150)
-        except:
-            st.markdown("### 🤖 Finny")
-            
+        if os.path.exists("finny_logo.jpg"):
+            st.image("finny_logo.jpg", width=150)
+        
         st.markdown("### 🏢 Van Hattem Advies B.V.")
-        st.success("✅ Live Twinfield Koppeling")
-        st.success("✅ Jaarrekeningen '22, '23, '24")
-        st.success("✅ Transacties (5 jaar)")
+        
+        # --- DEBUG CHECK ---
+        # Dit laat zien welke bestanden Streamlit écht ziet
+        files_present = os.listdir()
+        if "133700 FinTransactionSearch all 5jr.csv" in files_present:
+             st.success("✅ Data Connectie Live")
+        else:
+             st.error("❌ Data nog aan het laden...")
+             # Optioneel: st.write(files_present) # Zet dit aan als je wilt zien wat hij wél ziet
         
         st.markdown("---")
-        if st.button("Sessie Resetten"):
+        if st.button("Reset Sessie"):
             st.rerun()
 
-    # --- HOOFDSCHERM ---
     st.title("👋 Goedemiddag, Michiel.")
-    st.markdown("De administratie is bijgewerkt. Ik heb inzicht in je cijfers van 2022 t/m nu.")
-
     full_context = load_demo_data()
+    
+    if len(full_context) < 100:
+        st.info("⚠️ Finny is aan het opstarten. Als dit blijft staan: Doe een 'Clear Cache'.")
+
+    st.markdown("De administratie is bijgewerkt. Ik heb inzicht in je cijfers van 2022 t/m nu.")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -124,34 +115,17 @@ if check_password():
     for msg in st.session_state.messages:
         st.chat_message(msg["role"]).write(msg["content"])
 
-    if prompt := st.chat_input("Bijv: Hoe ontwikkelt mijn omzet zich over de laatste 3 jaar?"):
+    if prompt := st.chat_input("Stel je vraag..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Finny analyseert 3 jaar aan data..."):
+            with st.spinner("Finny denkt na..."):
                 try:
-                    # System Prompt geoptimaliseerd voor trendanalyse
                     messages = [
-                        {"role": "system", "content": f"""
-                        Je bent Finny, dé financiële AI-partner.
-                        
-                        JOUW KRACHT:
-                        Je hebt toegang tot de volledige administratie (2022-2024) en transacties.
-                        Gebruik deze data om trends te signaleren. Als iemand vraagt naar "ontwikkeling" of "vergelijking", zet dan de jaren naast elkaar.
-                        
-                        DATA CONTEXT:
-                        {full_context}
-                        
-                        ANTWOORD STIJL:
-                        - Zakelijk, direct, proactief.
-                        - Reken zelf totalen uit op basis van de CSV als dat nodig is.
-                        - Gebruik Markdown tabellen voor cijferoverzichten.
-                        - Gebruik punten voor duizendtallen (€ 1.000).
-                        """},
+                        {"role": "system", "content": f"Je bent Finny. Antwoord zakelijk op basis van deze data:\n{full_context}"},
                         {"role": "user", "content": prompt}
                     ]
-                    
                     completion = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=messages,
