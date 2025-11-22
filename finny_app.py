@@ -4,161 +4,222 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 import os
 import json
-import re
 from datetime import datetime
 
 # ==========================================
-# 1. CONFIGURATIE
+# 1. CONFIGURATIE & AUTHENTICATIE
 # ==========================================
-st.set_page_config(page_title="Finny | Intelligent Finance", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Finny 5.3 | Lite & Fast", page_icon="💰", layout="wide")
 
 def check_password():
+    """Eenvoudige wachtwoordbeveiliging."""
+    def password_entered():
+        if st.session_state["password"] == "demo2025":
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
     if "password_correct" not in st.session_state:
-        st.text_input("Wachtwoord", type="password", key="password_input", on_change=lambda: st.session_state.update({"password_correct": st.session_state.password_input == "demo2025"}))
+        if os.path.exists("finny_logo.jpg"):
+            st.image("finny_logo.jpg", width=150)
+        st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>Finny Portal</h1>", unsafe_allow_html=True)
+        st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
         return False
-    return st.session_state["password_correct"]
+    elif not st.session_state["password_correct"]:
+        st.text_input("Wachtwoord", type="password", on_change=password_entered, key="password")
+        st.error("Onjuist wachtwoord")
+        return False
+    else:
+        return True
 
 # ==========================================
-# 2. DATA LADEN & LIVE SCHOONMAKEN
+# 2. DATA LADEN (NIEUWE LITE BESTANDEN)
 # ==========================================
 @st.cache_data
 def load_data():
-    data = {"transacties": None, "pdf_text": "", "syllabus": ""}
+    data = {"trans": None, "ledger": None, "syllabus": "", "pdf_text": ""}
     
-    # --- A. CSV (VUIILE DATA INLEZEN EN SCHOONMAKEN) ---
-    # We zoeken naar jouw originele bestand
-    csv_file = "133700 FinTransactionSearch all 5jr.csv"
-    
-    if os.path.exists(csv_file):
+    # 1. Transacties (De nieuwe Lite CSV)
+    # We gebruiken nu de schone kolommen: Finny_GLCode, AmountDC_num, Finny_Year
+    if os.path.exists("Finny_Transactions_Lite.csv"):
         try:
-            # 1. Lees het 'vuile' Twinfield bestand
-            df = pd.read_csv(csv_file, sep=";", on_bad_lines='skip', low_memory=False)
-            
-            # 2. Kolommen normaliseren
-            df.columns = df.columns.str.strip().str.lower()
-            
-            # 3. Hernoemen naar standaard namen
-            rename_map = {}
-            for col in df.columns:
-                if 'bedrag' in col or 'value' in col or 'amount' in col: rename_map[col] = 'bedrag'
-                if 'datum' in col or 'date' in col: rename_map[col] = 'datum'
-                if 'omschrijving' in col or 'desc' in col: rename_map[col] = 'omschrijving'
-                if 'grootboek' in col or 'dim1' in col: rename_map[col] = 'grootboek'
-            
-            df = df.rename(columns=rename_map)
-            
-            # 4. Bedragen repareren (De 'Dutch Number Fix')
-            if 'bedrag' in df.columns:
-                def clean_money(val):
-                    if pd.isna(val): return 0.0
-                    # Verwijder alles behalve cijfers, min-teken en komma
-                    s = str(val).replace('€', '').replace(' ', '').replace('.', '') 
-                    s = s.replace(',', '.') # Komma naar punt
-                    try: return float(s)
-                    except: return 0.0
-                df['clean_amount'] = df['bedrag'].apply(clean_money)
-            
-            # 5. Datums repareren
-            if 'datum' in df.columns:
-                df['clean_date'] = pd.to_datetime(df['datum'], dayfirst=True, errors='coerce')
-                df['year'] = df['clean_date'].dt.year
-            
-            # 6. Zoektekst maken
-            cols = [c for c in ['omschrijving', 'grootboek'] if c in df.columns]
-            df['search_text'] = df[cols].astype(str).agg(' '.join, axis=1).str.lower()
-            
-            data["transacties"] = df
-            
+            # Let op de separator, vaak ; bij Nederlandse CSV's, check je bestand!
+            # Op basis van je upload lijkt het ; te zijn.
+            df = pd.read_csv("Finny_Transactions_Lite.csv", sep=";", on_bad_lines='skip', low_memory=False)
+            # Zorg dat datum een datetime object is
+            if 'EntryDate' in df.columns:
+                df['EntryDate'] = pd.to_datetime(df['EntryDate'], errors='coerce')
+            data["trans"] = df
         except Exception as e:
-            st.error(f"CSV Fout: {e}")
-    
-    # --- B. PDF LADEN ---
-    pdfs = ["Van Hattem Advies B.V. - Jaarrekening 2024.pdf", "Van Hattem Advies B.V. - Jaarrekening 2023.pdf", "Van Hattem Advies B.V. - Jaarstukken 2022.pdf"]
-    for pdf in pdfs:
-        if os.path.exists(pdf):
-            try:
-                reader = PdfReader(pdf)
-                text = ""
-                for page in reader.pages[:20]: text += page.extract_text()
-                data["pdf_text"] += f"--- BRON: {pdf} ---\n{text[:10000]}\n\n"
-            except: pass
-            
-    if os.path.exists("Finny_syllabus.txt"):
-        with open("Finny_syllabus.txt", "r", encoding="utf-8") as f: data["syllabus"] = f.read()
+            st.error(f"Fout bij laden transacties: {e}")
 
+    # 2. Grootboekschema (Lite CSV)
+    if os.path.exists("Finny_GL_Lite.csv"):
+        try:
+            df_l = pd.read_csv("Finny_GL_Lite.csv", sep=";", on_bad_lines='skip')
+            data["ledger"] = df_l
+        except Exception as e:
+            st.error(f"Fout bij laden grootboek: {e}")
+
+    # 3. Syllabus (Voor de synoniemen)
+    if os.path.exists("Finny_syllabus_v9_4_with_B3_B4_B5.txt"):
+        try:
+            with open("Finny_syllabus_v9_4_with_B3_B4_B5.txt", "r", encoding="utf-8") as f:
+                data["syllabus"] = f.read()
+        except:
+            pass
+            
+    # 4. Jaarrekeningen (PDF)
+    pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
+    for pdf in pdf_files:
+        try:
+            reader = PdfReader(pdf)
+            text = ""
+            # Eerste 15 pagina's zijn vaak de kerncijfers
+            for i, page in enumerate(reader.pages):
+                if i < 15: text += page.extract_text()
+            data["pdf_text"] += f"--- BRON: {pdf} ---\n{text[:8000]}\n\n"
+        except:
+            pass
+            
     return data
 
 # ==========================================
-# 3. LOGICA (ROUTER & ENGINE)
+# 3. DE LOGICA (ROUTER & QUERY)
 # ==========================================
-def run_router(client, question, context_snippet):
+
+def get_finny_plan(client, question, syllabus):
+    """
+    Stap 1 van je proces: Vraag -> Synoniemen -> Grootboekrekening(en).
+    """
     system_prompt = f"""
-    Je bent de Router.
-    CONTEXT: {context_snippet[:2000]}
-    VRAAG: {question}
+    Je bent het brein van Finny. Je analyseert de vraag.
+    CONTEXT (Syllabus met synoniemen):
+    {syllabus[:5000]} 
     
     TAAK:
-    1. Bepaal bron: 'CSV' (details/kosten/leveranciers) of 'PDF' (omzet/winst/balans).
-    2. Vertaal zoektermen: "Auto" -> ["brandstof", "lease", "garage"].
+    1. Bepaal of de vraag over 'PDF' (Jaarrekening/Winst/Balans totaal) of 'CSV' (Specifieke kosten/leveranciers/details) gaat.
+    2. Als CSV: Welke 'Finny_GLCode's' (grootboeknummers) of zoektermen zijn relevant?
+    3. Welke jaren? (Huidig jaar is {datetime.now().year}).
     
-    ANTWOORD JSON: {{"source": "CSV"|"PDF"|"BOTH", "years": [2023], "keywords": ["term1"]}}
+    OUTPUT (JSON):
+    {{
+        "source": "PDF" of "CSV" of "BOTH",
+        "gl_codes": [lijst van ints, bijv 4300],
+        "search_terms": [lijst van strings, bijv "Vodafone"],
+        "years": [lijst van ints],
+        "reason": "Korte uitleg"
+    }}
     """
     try:
-        res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":system_prompt}], response_format={"type":"json_object"})
-        return json.loads(res.choices[0].message.content)
-    except: return {"source": "BOTH", "years": [], "keywords": []}
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": question}],
+            response_format={"type": "json_object"},
+            temperature=0
+        )
+        return json.loads(response.choices[0].message.content)
+    except:
+        return {"source": "BOTH", "gl_codes": [], "search_terms": [], "years": []}
 
-def query_csv(df, intent):
-    if df is None: return "Geen CSV data beschikbaar."
+def execute_csv_query(plan, df):
+    """
+    Stap 2 & 3: Filteren en Aggregeren.
+    Gebruikt de nieuwe 'Finny_Transactions_Lite.csv' structuur.
+    """
+    if df is None: return ""
     
-    filtered = df.copy()
+    subset = df.copy()
     
-    # Filter Jaren
-    if intent.get('years') and 'year' in df.columns:
-        # Alleen filteren als het resultaten oplevert
-        year_match = filtered[filtered['year'].isin(intent['years'])]
-        if len(year_match) > 0: filtered = year_match
-    
-    # Filter Keywords
-    keywords = intent.get('keywords', [])
-    if keywords:
-        pattern = '|'.join([re.escape(k.lower()) for k in keywords])
-        filtered = filtered[filtered['search_text'].str.contains(pattern, na=False)]
+    # 1. Filter op Jaar (Finny_Year)
+    if plan.get("years"):
+        subset = subset[subset['Finny_Year'].isin(plan['years'])]
         
-    count = len(filtered)
-    if count == 0: return f"Geen transacties gevonden voor {keywords}."
+    # 2. Filter op GL Codes (Finny_GLCode)
+    # We moeten zorgen dat de types matchen (float/int/str probleem voorkomen)
+    if plan.get("gl_codes"):
+        # Maak schoon en converteer naar string voor matching
+        codes = [str(c).split('.')[0] for c in plan['gl_codes']] 
+        subset['GL_Str'] = subset['Finny_GLCode'].astype(str).str.split('.').str[0]
+        subset = subset[subset['GL_Str'].isin(codes)]
+        
+    # 3. Filter op Zoektermen (Description / AccountName)
+    if plan.get("search_terms"):
+        terms = plan['search_terms']
+        pattern = '|'.join(terms)
+        # Zoek in Omschrijving én Relatienaam
+        mask = (
+            subset['Description'].astype(str).str.contains(pattern, case=False, na=False) | 
+            subset['AccountName'].astype(str).str.contains(pattern, case=False, na=False) |
+            subset['Finny_GLDescription'].astype(str).str.contains(pattern, case=False, na=False)
+        )
+        # Als er ook GL codes waren, is dit een EN (verfijning), anders een OF
+        if not plan.get("gl_codes"):
+             subset = subset[mask]
+        # Als we al GL codes hadden, filteren we verder binnen die selectie als de gebruiker dat specifiek vraagt, 
+        # maar meestal zijn GL codes leidend. Laten we zoektermen gebruiken als GL codes leeg zijn of als verfijning.
+
+    # 4. Resultaat (Aggregatie)
+    if len(subset) == 0:
+        return "Geen transacties gevonden."
+        
+    # Totaal berekenen (AmountDC_num is al schoon!)
+    total = subset['AmountDC_num'].sum()
     
-    total = filtered['clean_amount'].sum()
-    
-    if count > 50:
-        # Top 10 kostenposten tonen
-        top = filtered.groupby('omschrijving')['clean_amount'].sum().sort_values().head(10)
-        return f"--- CSV SAMENVATTING ---\nAantal: {count}\nTOTAAL: € {total:,.2f}\n\nTop posten:\n{top.to_string()}"
+    # Samenvatting maken
+    if len(subset) > 50:
+        # Groepeer per GL Omschrijving
+        summary = subset.groupby('Finny_GLDescription')['AmountDC_num'].sum().reset_index()
+        return f"""
+        --- CSV ANALYSE ---
+        Gevonden boekingen: {len(subset)}
+        TOTAAL BEDRAG: € {total:,.2f}
+        
+        Uitsplitsing per categorie:
+        {summary.to_string(index=False)}
+        """
     else:
-        cols = [c for c in ['datum', 'omschrijving', 'bedrag'] if c in filtered.columns]
-        return f"--- CSV DETAILS ---\nTOTAAL: € {total:,.2f}\n\n{filtered[cols].to_string(index=False)}"
+        # Details tonen
+        cols = ['EntryDate', 'AccountName', 'Description', 'AmountDC_num']
+        return f"""
+        --- CSV DETAILS ---
+        TOTAAL: € {total:,.2f}
+        
+        {subset[cols].to_string(index=False)}
+        """
 
 # ==========================================
-# 4. APP UI
+# 4. MAIN APP
 # ==========================================
 if check_password():
     if "OPENAI_API_KEY" in st.secrets:
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
         client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     else:
-        st.error("API Key ontbreekt.")
+        st.error("API Key ontbreekt in secrets.")
         st.stop()
 
-    data = load_data()
-    
+    # Sidebar
     with st.sidebar:
-        st.title("🤖 Finny")
-        if data["transacties"] is not None: st.success(f"✅ Data Live ({len(data['transacties'])} regels)")
-        else: st.error("❌ Geen CSV gevonden")
-        if st.button("Reset"): st.rerun()
+        if os.path.exists("finny_logo.jpg"):
+            st.image("finny_logo.jpg", width=150)
+        st.markdown("### 🏢 Van Hattem Advies")
+        
+        # Laad data
+        data = load_data()
+        
+        if data["trans"] is not None:
+            st.success(f" ✅ Transacties ({len(data['trans'])} regels)")
+        else:
+            st.error(" ❌ CSV niet gevonden")
+        
+        if st.button("Reset Sessie"): st.rerun()
 
-    st.title("Finny 7.5 (Self-Cleaning)")
-    
+    # Chat
+    st.title(" 👋 Goedemiddag, Michiel.")
+    st.markdown("Ik heb inzicht in je cijfers t/m vandaag.")
+
     if "messages" not in st.session_state: st.session_state.messages = []
     for msg in st.session_state.messages: st.chat_message(msg["role"]).write(msg["content"])
 
@@ -167,17 +228,37 @@ if check_password():
         st.chat_message("user").write(prompt)
         
         with st.chat_message("assistant"):
-            with st.spinner("Denken..."):
-                intent = run_router(client, prompt, data["syllabus"])
-                st.caption(f"Strategie: {intent}")
+            with st.spinner("Finny denkt na..."):
+                # Stap 1: Plan
+                plan = get_finny_plan(client, prompt, data["syllabus"])
                 
+                # Debug info voor jou (zodat je ziet dat hij de syllabus gebruikt)
+                st.caption(f" 🧠 Strategie: {plan['source']} | Zoekt: {plan['gl_codes']} / {plan['search_terms']}")
+                
+                # Stap 2: Data verzamelen
                 context = ""
-                if intent.get("source") in ["PDF", "BOTH"]: context += data["pdf_text"]
-                if intent.get("source") in ["CSV", "BOTH"]: context += query_csv(data["transacties"], intent)
+                if plan["source"] in ["CSV", "BOTH"]:
+                    context += execute_csv_query(plan, data["trans"])
+                if plan["source"] in ["PDF", "BOTH"]:
+                    context += data["pdf_text"]
                 
-                sys_msg = "Je bent Finny. Gebruik de context. Reken niet zelf, de totalen staan er al."
-                res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system", "content": sys_msg + context}, {"role":"user", "content": prompt}])
-                
-                reply = res.choices[0].message.content
-                st.write(reply)
-                st.session_state.messages.append({"role": "assistant", "content": reply})
+                # Stap 3: Antwoord
+                try:
+                    messages = [
+                        {"role": "system", "content": f"""
+                        Je bent Finny. Antwoord op basis van deze data:
+                        {context}
+                        
+                        REGELS:
+                        1. Als er CSV data is met een totaalbedrag, gebruik dat EXACT. Reken niet zelf opnieuw.
+                        2. Als de vraag over de jaarrekening gaat, citeer de PDF.
+                        3. Wees zakelijk en kort.
+                        """},
+                        {"role": "user", "content": prompt}
+                    ]
+                    completion = client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0)
+                    response = completion.choices[0].message.content
+                    st.write(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.error(f"Fout: {e}")
