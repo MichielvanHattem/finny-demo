@@ -1,285 +1,228 @@
 import streamlit as st
 import pandas as pd
 import os
-import json
-from datetime import datetime
+from PyPDF2 import PdfReader
 
-# Probeer imports die mogelijk falen veilig te laden
+# Probeer OpenAI, installeer indien nodig (failsafe)
 try:
     from openai import OpenAI
-    from PyPDF2 import PdfReader
-except ImportError as e:
-    st.error(f"CRITISCHE FOUT: Ontbrekende bibliotheek. Zorg dat requirements.txt correct is. Detail: {e}")
-    st.stop()
+except ImportError:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openai"])
+    from openai import OpenAI
 
 # ==========================================
-# 1. SETUP & CONFIGURATIE
+# 1. SETUP & CONFIG
 # ==========================================
-st.set_page_config(page_title="Finny 8.0 | Hybride", page_icon="🦁", layout="wide")
+st.set_page_config(page_title="Finny 11.0 | Strict Logic", page_icon="📏", layout="wide")
 
-# Veilige client initialisatie
+# Client setup
 client = None
 if "OPENAI_API_KEY" in st.secrets:
     os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-def render_logo():
-    """Zoekt flexibel naar logo bestand."""
-    logo_files = ["finny_logo.png", "finny_logo.jpg", "logo.png"]
-    for l in logo_files:
-        if os.path.exists(l):
-            st.sidebar.image(l, width=140)
-            return
-    st.sidebar.markdown("### 🦁 FINNY")
-
 # ==========================================
-# 2. DATA MANAGER
+# 2. DATA LADEN (NORMALISATIE IS KEY)
 # ==========================================
 @st.cache_data
 def load_data():
-    data = {"csv": None, "pdf": "", "syllabus": "", "gl_map": None, "years": []}
-    
-    # A. CSV TRANSACTIES
+    data = {"trans": None, "gl": None, "pdf": ""}
+
+    # A. GROOTBOEKSCHEMA (De Bron van Waarheid)
+    if os.path.exists("Finny_GL_Lite.csv"):
+        try:
+            # Lees in
+            df_gl = pd.read_csv("Finny_GL_Lite.csv", sep=";", on_bad_lines='skip', dtype=str)
+            
+            # Kolommen opschonen (spaties weg)
+            df_gl.columns = df_gl.columns.str.strip()
+            
+            # Code normaliseren (4310.0 -> 4310)
+            if 'Finny_GLCode' in df_gl.columns:
+                df_gl['Finny_GLCode'] = df_gl['Finny_GLCode'].str.split('.').str[0].str.strip()
+            
+            data["gl"] = df_gl
+        except Exception as e:
+            st.error(f"Fout in GL CSV: {e}")
+
+    # B. TRANSACTIES (De Details)
     if os.path.exists("Finny_Transactions_Lite.csv"):
         try:
-            df = pd.read_csv("Finny_Transactions_Lite.csv", sep=";", on_bad_lines='skip', low_memory=False)
+            df_t = pd.read_csv("Finny_Transactions_Lite.csv", sep=";", on_bad_lines='skip', low_memory=False)
+            df_t.columns = df_t.columns.str.strip()
             
-            # Check op verplichte kolommen zoals uit analyse bleek
-            required = ['AmountDC_num', 'Finny_GLCode']
-            if not all(col in df.columns for col in required):
-                st.error(f"CSV Fout: Mis kolommen {required}. Gevonden: {df.columns.tolist()}")
-            else:
-                # Normalisatie
-                df['Finny_GLCode'] = pd.to_numeric(df['Finny_GLCode'], errors='coerce').fillna(0).astype(int).astype(str)
-                if 'Finny_Year' in df.columns:
-                    df['Finny_Year'] = pd.to_numeric(df['Finny_Year'], errors='coerce').fillna(0).astype(int)
-                    data["years"] = sorted(df[df['Finny_Year'] > 2000]['Finny_Year'].unique().tolist())
+            # Code normaliseren (MOET matchen met GL)
+            if 'Finny_GLCode' in df_t.columns:
+                df_t['Finny_GLCode'] = df_t['Finny_GLCode'].astype(str).str.split('.').str[0].str.strip()
                 
-                data["csv"] = df
+            # Bedrag numeriek maken (komma/punt fix)
+            if 'AmountDC_num' in df_t.columns:
+                df_t['AmountDC_num'] = pd.to_numeric(df_t['AmountDC_num'], errors='coerce').fillna(0.0)
+                
+            # Jaar numeriek
+            if 'Finny_Year' in df_t.columns:
+                 df_t['Finny_Year'] = pd.to_numeric(df_t['Finny_Year'], errors='coerce').fillna(0).astype(int)
+                 
+            data["trans"] = df_t
         except Exception as e:
-            st.error(f"Kon CSV niet laden: {e}")
+            st.error(f"Fout in Transactie CSV: {e}")
 
-    # B. PDF CONTENT
+    # C. PDF (Voor Winst/Balans)
     pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
     for pdf in pdf_files:
         try:
             reader = PdfReader(pdf)
             text = ""
-            for i, page in enumerate(reader.pages):
-                if i < 20: text += page.extract_text() # Eerste 20 pagina's
+            for i in range(min(15, len(reader.pages))):
+                text += reader.pages[i].extract_text()
             data["pdf"] += f"\n--- {pdf} ---\n{text}"
         except: pass
-
-    # C. SYLLABUS & GL SCHEMA
-    if os.path.exists("Finny_syllabus_v9_4_with_B3_B4_B5.txt"):
-        with open("Finny_syllabus_v9_4_with_B3_B4_B5.txt", "r", encoding="utf-8") as f:
-            data["syllabus"] = f.read()
             
     return data
 
 # ==========================================
-# 3. INTELLIGENTIE (ROUTER & LOGICA)
+# 3. DE STRICTE LOGICA (ZOALS JE BESCHREEF)
 # ==========================================
-
-def decide_strategy(question, syllabus_snippet):
+def execute_logic(question, data):
+    log = [] # We houden stap voor stap bij wat we doen
+    
+    if not client: return "Geen API key", []
+    
+    # STAP 1: Vertaal vraag naar ZOEKTERM (voor de GL lijst)
+    # We vragen AI niet om de code, maar om het WOORD waarop we moeten zoeken in Kolom B.
+    prompt_term = f"""
+    Vertaal de vraag naar een zoekterm voor het grootboekschema.
+    Vraag: "{question}"
+    
+    Voorbeeld: "Wat zijn de telefoonkosten?" -> "Telefoon"
+    Voorbeeld: "Hoeveel kosten aan auto?" -> "Auto"
+    Voorbeeld: "Omzet 2023?" -> "Omzet"
+    
+    Geef alleen het woord.
     """
-    De Hybride Router: Bepaalt of we naar PDF (Officieel) of CSV (Details) gaan.
-    """
-    if not client: return {"tool": "ERROR", "reason": "Geen API key"}
+    res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt_term}])
+    search_term = res.choices[0].message.content.strip().replace('"', '')
+    log.append(f"1. Zoekterm bepaald: '{search_term}'")
     
-    prompt = f"""
-    Je bent de architect van Finny. Analyseer de vraag.
+    # STAP 2: Zoek in GL Tabel (Kolom B -> Vind Kolom A)
+    found_codes = []
+    found_names = []
     
-    CONTEXT SYLLABUS: {syllabus_snippet[:1000]}
-    
-    VRAAG: "{question}"
-    
-    KIES GEREEDSCHAP:
-    - "PDF": Voor vragen over totale Winst, Omzet, Balans, Jaarrekening tekst, Resultaatverdeling. (High level).
-    - "CSV": Voor vragen over specifieke kostenposten (auto, huur), leveranciers, details, verloop over maanden. (Low level).
-    - "BOTH": Als details én context nodig zijn.
-    
-    OUTPUT JSON:
-    {{
-        "tool": "PDF" | "CSV" | "BOTH",
-        "reason": "Uitleg",
-        "csv_search_terms": ["term1", "term2"] (alleen als CSV relevant is)
-    }}
-    """
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4o", # We gebruiken het sterke model zoals geadviseerd
-            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
-            response_format={"type": "json_object"},
-            temperature=0
-        )
-        return json.loads(res.choices[0].message.content)
-    except Exception as e:
-        return {"tool": "PDF", "reason": "Fallback door fout", "csv_search_terms": []}
-
-def get_gl_codes_for_query(question, syllabus, available_gl_codes):
-    """
-    Stap 1 van jouw proces: Vertaal Vraag -> GL Codes
-    """
-    prompt = f"""
-    Vertaal de gebruikersvraag naar specifieke Grootboekrekeningnummers (GL Codes).
-    Gebruik de syllabus voor synoniemen.
-    
-    VRAAG: {question}
-    SYLLABUS: {syllabus[:3000]}
-    
-    Geef terug als JSON: {{ "gl_codes": ["4350", "4360", ...] }}
-    Alleen nummers geven die logisch zijn voor deze kostensoort.
-    """
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "system", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0
-        )
-        return json.loads(res.choices[0].message.content).get("gl_codes", [])
-    except:
-        return []
-
-def execute_csv_analysis(df, gl_codes, years=None):
-    """
-    Stap 2 & 3: Filter & Aggregeer
-    """
-    if df is None or not gl_codes: return "Geen data gevonden."
-    
-    # Filter op codes
-    subset = df[df['Finny_GLCode'].isin([str(c) for c in gl_codes])]
-    
-    if len(subset) == 0: return "Geen transacties gevonden op deze GL codes."
-    
-    total = subset['AmountDC_num'].sum()
-    
-    # Groepeer per jaar
-    per_year = subset.groupby('Finny_Year')['AmountDC_num'].sum().reset_index()
-    per_year_str = per_year.to_string(index=False)
-    
-    # Top 5 details
-    details = subset.sort_values('AmountDC_num').head(5)[['EntryDate', 'Description', 'AmountDC_num']]
-    
-    return f"""
-    ANALYSE OP REKENINGEN: {gl_codes}
-    --------------------------------
-    TOTAAL BEDRAG: € {total:,.2f}
-    
-    PER JAAR:
-    {per_year_str}
-    
-    VOORBEELD BOEKINGEN (Top 5):
-    {details.to_string(index=False)}
-    """
-
-# ==========================================
-# 4. MAIN INTERFACE
-# ==========================================
-def main():
-    # Authenticatie Check
-    if "auth" not in st.session_state: st.session_state.auth = False
-    
-    if not st.session_state.auth:
-        st.title("Finny 8.0 Login")
-        pwd = st.text_input("Wachtwoord", type="password")
-        if pwd == "demo2025":
-            st.session_state.auth = True
-            st.rerun()
-        return
-
-    # Check API key
-    if not client:
-        st.error("⚠️ Geen OpenAI API Key gevonden in st.secrets!")
-        st.stop()
-
-    # Sidebar
-    with st.sidebar:
-        render_logo()
-        st.markdown("---")
-        st.markdown("### 📡 Status")
-        data = load_data()
+    if data["gl"] is not None:
+        # Zoek in Description (case insensitive)
+        mask = data["gl"]['Finny_GLDescription'].str.contains(search_term, case=False, na=False)
+        matches = data["gl"][mask]
         
-        if data["csv"] is not None:
-            st.success(f"Transacties: {len(data['csv'])}")
+        if not matches.empty:
+            found_codes = matches['Finny_GLCode'].unique().tolist()
+            found_names = matches['Finny_GLDescription'].unique().tolist()
+            log.append(f"2. Gevonden in GL Schema: {len(matches)} rekeningen.")
+            log.append(f"   -> Codes: {found_codes}")
+            log.append(f"   -> Namen: {found_names}")
         else:
-            st.error("Geen CSV data")
-            
-        if data["pdf"]:
-            st.success("PDF Jaarrekening geladen")
-            
-        if st.button("Cache Wissen"):
-            st.cache_data.clear()
-            st.rerun()
+            log.append(f"2. GEEN match in GL schema voor '{search_term}'.")
+            # Fallback: Als 'Auto' niet werkt, probeer 'Vervoer'? (Nu even strikt houden)
 
-    # Chat
-    st.title("🦁 Finny 8.0")
-    st.caption("Hybride Architectuur: PDF (Officieel) + CSV (Detail)")
+    # STAP 3: Zoek in Transacties (Met de gevonden codes)
+    total_amount = 0.0
+    trans_count = 0
+    relevant_subset = pd.DataFrame()
+    
+    if data["trans"] is not None and found_codes:
+        # Filter op codes
+        subset = data["trans"][data["trans"]['Finny_GLCode'].isin(found_codes)]
+        
+        # Filter op Jaar (als dat in de vraag zit)
+        # Simpele check: zit "2023" in de vraag?
+        year_filter = None
+        for y in [2022, 2023, 2024, 2025]:
+            if str(y) in question:
+                year_filter = y
+                subset = subset[subset['Finny_Year'] == y]
+                log.append(f"3. Filter op Jaar: {y}")
+                break
+        
+        if len(subset) > 0:
+            total_amount = subset['AmountDC_num'].sum()
+            trans_count = len(subset)
+            relevant_subset = subset
+            log.append(f"4. Transacties gevonden: {trans_count}")
+            log.append(f"   -> Totaalbedrag: € {total_amount:,.2f}")
+        else:
+            log.append("4. Wel GL codes gevonden, maar geen boekingen in transacties.")
+    
+    # STAP 4: Formuleer antwoord
+    # Als we transacties hebben, is dat het antwoord. Anders kijken we naar PDF.
+    
+    final_context = ""
+    if trans_count > 0:
+        final_context = f"""
+        UITKOMST UIT CSV:
+        Onderwerp: {search_term}
+        Rekeningen: {found_names} (Codes: {found_codes})
+        Jaar: {year_filter if year_filter else "Alle jaren"}
+        TOTAAL BEDRAG: € {total_amount:,.2f}
+        
+        Details (Top 5):
+        {relevant_subset[['EntryDate', 'Description', 'AmountDC_num']].head(5).to_string(index=False)}
+        """
+    else:
+        final_context = "Geen resultaat uit CSV. Kijk in de PDF."
+
+    # Laatste AI slag voor nette zin
+    final_prompt = f"""
+    Vraag: {question}
+    
+    Data uit Transacties (CSV):
+    {final_context}
+    
+    Data uit Jaarrekening (PDF):
+    {data['pdf'][:5000]}
+    
+    Geef antwoord. Als CSV data (bedragen) beschikbaar zijn, gebruik die. 
+    Als CSV leeg is, gebruik PDF.
+    """
+    
+    res_final = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": final_prompt}])
+    return res_final.choices[0].message.content, log
+
+# ==========================================
+# 4. UI
+# ==========================================
+with st.sidebar:
+    if os.path.exists("finny_logo.jpg"): st.image("finny_logo.jpg", width=100)
+    st.markdown("### ⚙️ Onder de motorkap")
+    if st.button("Reset"): st.cache_data.clear(); st.rerun()
+
+st.title("Finny 11.0")
+st.markdown("*Logica: Vraag -> Zoek in GL (Kolom B) -> Pak Code (Kolom A) -> Sommeer Transacties.*")
+
+if "auth" not in st.session_state:
+    if st.text_input("Wachtwoord", type="password") == "demo2025":
+        st.session_state.auth = True
+        st.rerun()
+else:
+    data = load_data()
+    if data["gl"] is not None: st.success(f"GL Schema geladen ({len(data['gl'])} rekeningen)")
+    if data["trans"] is not None: st.success(f"Transacties geladen ({len(data['trans'])} rijen)")
 
     if "messages" not in st.session_state: st.session_state.messages = []
-    for m in st.session_state.messages: 
+    for m in st.session_state.messages:
         with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-            if "meta" in m:
-                with st.expander("Technische Analyse"):
-                    st.json(m["meta"])
+            st.write(m["content"])
+            if "log" in m:
+                with st.expander("🔍 Zie de gevolgde stappen"):
+                    for l in m["log"]: st.code(l, language="text")
 
-    if prompt := st.chat_input("Stel je vraag..."):
+    if prompt := st.chat_input("Wat zijn de kosten voor..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
         
         with st.chat_message("assistant"):
-            with st.spinner("Analyseren en routeren..."):
-                
-                # STAP 1: ROUTER
-                strategy = decide_strategy(prompt, data["syllabus"])
-                context_text = ""
-                debug_meta = {"strategy": strategy}
-                
-                # STAP 2: UITVOERING
-                if strategy["tool"] in ["CSV", "BOTH"]:
-                    # Vertaal vraag naar GL codes (De 'Pandas Agent' logica)
-                    gl_codes = get_gl_codes_for_query(prompt, data["syllabus"], [])
-                    debug_meta["gl_codes_found"] = gl_codes
-                    
-                    csv_result = execute_csv_analysis(data["csv"], gl_codes)
-                    context_text += f"\n\n=== CSV DATA (Details) ===\n{csv_result}"
-                
-                if strategy["tool"] in ["PDF", "BOTH"]:
-                    # Voeg PDF context toe
-                    context_text += f"\n\n=== PDF DATA (Officieel) ===\n{data['pdf'][:15000]}" # Limit om tokens te sparen
-
-                # STAP 3: ANTWOORD
-                final_prompt = f"""
-                Je bent Finny. Geef antwoord op de vraag.
-                Gebruik de data hieronder.
-                
-                VRAAG: {prompt}
-                
-                DATA:
-                {context_text}
-                
-                INSTRUCTIE:
-                - Als de data uit de CSV komt, meld de specifieke rekeningnummers.
-                - Als de data uit de PDF komt, vermeld "volgens de jaarrekening".
-                - Wees zakelijk en concreet.
-                """
-                
-                completion = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "system", "content": final_prompt}],
-                )
-                
-                ans = completion.choices[0].message.content
+            with st.spinner("Logica uitvoeren..."):
+                ans, log = execute_logic(prompt, data)
                 st.write(ans)
-                
-                # Save history
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "content": ans, 
-                    "meta": debug_meta
-                })
-
-if __name__ == "__main__":
-    main()
+                with st.expander("🔍 Zie de gevolgde stappen", expanded=True):
+                    for l in log: st.code(l, language="text")
+                st.session_state.messages.append({"role": "assistant", "content": ans, "log": log})
