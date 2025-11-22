@@ -9,7 +9,7 @@ from datetime import datetime
 # ==========================================
 # 1. CONFIGURATIE & AUTHENTICATIE
 # ==========================================
-st.set_page_config(page_title="Finny 5.3 | Lite & Fast", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Finny 5.4 | Robust & Debug", page_icon="🦁", layout="wide")
 
 def check_password():
     """Eenvoudige wachtwoordbeveiliging."""
@@ -34,35 +34,46 @@ def check_password():
         return True
 
 # ==========================================
-# 2. DATA LADEN (NIEUWE LITE BESTANDEN)
+# 2. DATA LADEN (ROBUUST)
 # ==========================================
 @st.cache_data
 def load_data():
-    data = {"trans": None, "ledger": None, "syllabus": "", "pdf_text": ""}
+    data = {"trans": None, "ledger": None, "syllabus": "", "pdf_text": "", "years_available": []}
     
-    # 1. Transacties (De nieuwe Lite CSV)
-    # We gebruiken nu de schone kolommen: Finny_GLCode, AmountDC_num, Finny_Year
+    # 1. Transacties
     if os.path.exists("Finny_Transactions_Lite.csv"):
         try:
-            # Let op de separator, vaak ; bij Nederlandse CSV's, check je bestand!
-            # Op basis van je upload lijkt het ; te zijn.
+            # Lees CSV met punt-komma, forceer strings niet meteen, laat pandas raden
             df = pd.read_csv("Finny_Transactions_Lite.csv", sep=";", on_bad_lines='skip', low_memory=False)
-            # Zorg dat datum een datetime object is
+            
+            # 1. Opschonen kolomnamen (verwijder spaties voor en achter)
+            df.columns = df.columns.str.strip()
+            
+            # 2. Datum fixen
             if 'EntryDate' in df.columns:
                 df['EntryDate'] = pd.to_datetime(df['EntryDate'], errors='coerce')
+            
+            # 3. Beschikbare jaren opslaan (voor de prompt straks)
+            if 'Finny_Year' in df.columns:
+                # Zorg dat jaren integers zijn
+                df['Finny_Year'] = pd.to_numeric(df['Finny_Year'], errors='coerce').fillna(0).astype(int)
+                unique_years = sorted(df[df['Finny_Year'] > 0]['Finny_Year'].unique().tolist())
+                data["years_available"] = unique_years
+            
             data["trans"] = df
         except Exception as e:
             st.error(f"Fout bij laden transacties: {e}")
 
-    # 2. Grootboekschema (Lite CSV)
+    # 2. Grootboekschema
     if os.path.exists("Finny_GL_Lite.csv"):
         try:
             df_l = pd.read_csv("Finny_GL_Lite.csv", sep=";", on_bad_lines='skip')
+            df_l.columns = df_l.columns.str.strip()
             data["ledger"] = df_l
         except Exception as e:
             st.error(f"Fout bij laden grootboek: {e}")
 
-    # 3. Syllabus (Voor de synoniemen)
+    # 3. Syllabus
     if os.path.exists("Finny_syllabus_v9_4_with_B3_B4_B5.txt"):
         try:
             with open("Finny_syllabus_v9_4_with_B3_B4_B5.txt", "r", encoding="utf-8") as f:
@@ -70,13 +81,12 @@ def load_data():
         except:
             pass
             
-    # 4. Jaarrekeningen (PDF)
+    # 4. Jaarrekeningen PDF
     pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
     for pdf in pdf_files:
         try:
             reader = PdfReader(pdf)
             text = ""
-            # Eerste 15 pagina's zijn vaak de kerncijfers
             for i, page in enumerate(reader.pages):
                 if i < 15: text += page.extract_text()
             data["pdf_text"] += f"--- BRON: {pdf} ---\n{text[:8000]}\n\n"
@@ -89,26 +99,32 @@ def load_data():
 # 3. DE LOGICA (ROUTER & QUERY)
 # ==========================================
 
-def get_finny_plan(client, question, syllabus):
+def get_finny_plan(client, question, syllabus, available_years):
     """
-    Stap 1 van je proces: Vraag -> Synoniemen -> Grootboekrekening(en).
+    Stap 1: Vraag -> Plan.
+    Nu geven we de BESCHIKBARE JAREN mee, zodat hij niet naar 2025 zoekt als die niet bestaat.
     """
+    years_str = ", ".join(map(str, available_years)) if available_years else "Onbekend"
+    
     system_prompt = f"""
-    Je bent het brein van Finny. Je analyseert de vraag.
-    CONTEXT (Syllabus met synoniemen):
-    {syllabus[:5000]} 
+    Je bent de controller Finny.
+    
+    DATA CONTEXT:
+    - Beschikbare boekjaren in CSV: {years_str}. (Als de gebruiker geen jaar noemt, kies dan het meest recente beschikbare jaar uit deze lijst!).
+    - Huidige datum: {datetime.now().strftime('%d-%m-%Y')}.
+    
+    SYLLABUS (Synoniemen):
+    {syllabus[:4000]} 
     
     TAAK:
-    1. Bepaal of de vraag over 'PDF' (Jaarrekening/Winst/Balans totaal) of 'CSV' (Specifieke kosten/leveranciers/details) gaat.
-    2. Als CSV: Welke 'Finny_GLCode's' (grootboeknummers) of zoektermen zijn relevant?
-    3. Welke jaren? (Huidig jaar is {datetime.now().year}).
+    Bepaal zoekstrategie.
     
     OUTPUT (JSON):
     {{
-        "source": "PDF" of "CSV" of "BOTH",
-        "gl_codes": [lijst van ints, bijv 4300],
-        "search_terms": [lijst van strings, bijv "Vodafone"],
-        "years": [lijst van ints],
+        "source": "PDF" (voor algemene jaarcijfers/tekst), "CSV" (voor details/specificaties) of "BOTH",
+        "gl_codes": [lijst van integers, bijv 4300],
+        "search_terms": [lijst strings],
+        "years": [lijst integers uit de beschikbare jaren],
         "reason": "Korte uitleg"
     }}
     """
@@ -121,76 +137,96 @@ def get_finny_plan(client, question, syllabus):
         )
         return json.loads(response.choices[0].message.content)
     except:
-        return {"source": "BOTH", "gl_codes": [], "search_terms": [], "years": []}
+        return {"source": "BOTH", "gl_codes": [], "search_terms": [], "years": available_years[-1:] if available_years else []}
 
 def execute_csv_query(plan, df):
     """
-    Stap 2 & 3: Filteren en Aggregeren.
-    Gebruikt de nieuwe 'Finny_Transactions_Lite.csv' structuur.
+    Stap 2: Filteren (Met super-robuste type-matching).
     """
-    if df is None: return ""
+    if df is None: return "", None
     
     subset = df.copy()
+    debug_info = {"start_count": len(subset)}
     
-    # 1. Filter op Jaar (Finny_Year)
-    if plan.get("years"):
-        subset = subset[subset['Finny_Year'].isin(plan['years'])]
+    # 1. Filter op Jaar
+    # We zorgen dat we alleen filteren als de planner zinnige jaren geeft
+    req_years = plan.get("years", [])
+    if req_years:
+        subset = subset[subset['Finny_Year'].isin(req_years)]
+    debug_info["after_year_filter"] = len(subset)
+    debug_info["years_filtered"] = req_years
         
-    # 2. Filter op GL Codes (Finny_GLCode)
-    # We moeten zorgen dat de types matchen (float/int/str probleem voorkomen)
-    if plan.get("gl_codes"):
-        # Maak schoon en converteer naar string voor matching
-        codes = [str(c).split('.')[0] for c in plan['gl_codes']] 
-        subset['GL_Str'] = subset['Finny_GLCode'].astype(str).str.split('.').str[0]
-        subset = subset[subset['GL_Str'].isin(codes)]
+    # 2. Filter op GL Codes (De Hufterproof Matcher)
+    req_codes = plan.get("gl_codes", [])
+    if req_codes:
+        # A. Zet de dataframe kolom om naar integers (4900.0 -> 4900)
+        # We gebruiken pd.to_numeric om "4900.0" veilig naar getal te krijgen, dan int
+        subset['TEMP_MATCH_CODE'] = pd.to_numeric(subset['Finny_GLCode'], errors='coerce').fillna(0).astype(int)
         
-    # 3. Filter op Zoektermen (Description / AccountName)
-    if plan.get("search_terms"):
+        # B. Zet de gevraagde codes om naar integers
+        clean_req_codes = []
+        for c in req_codes:
+            try:
+                clean_req_codes.append(int(float(c)))
+            except:
+                pass
+        
+        # C. Match
+        subset = subset[subset['TEMP_MATCH_CODE'].isin(clean_req_codes)]
+        debug_info["codes_searched"] = clean_req_codes
+    
+    debug_info["after_code_filter"] = len(subset)
+        
+    # 3. Filter op Zoektermen
+    if plan.get("search_terms") and len(subset) > 0:
         terms = plan['search_terms']
         pattern = '|'.join(terms)
-        # Zoek in Omschrijving én Relatienaam
         mask = (
             subset['Description'].astype(str).str.contains(pattern, case=False, na=False) | 
             subset['AccountName'].astype(str).str.contains(pattern, case=False, na=False) |
             subset['Finny_GLDescription'].astype(str).str.contains(pattern, case=False, na=False)
         )
-        # Als er ook GL codes waren, is dit een EN (verfijning), anders een OF
-        if not plan.get("gl_codes"):
-             subset = subset[mask]
-        # Als we al GL codes hadden, filteren we verder binnen die selectie als de gebruiker dat specifiek vraagt, 
-        # maar meestal zijn GL codes leidend. Laten we zoektermen gebruiken als GL codes leeg zijn of als verfijning.
-
-    # 4. Resultaat (Aggregatie)
-    if len(subset) == 0:
-        return "Geen transacties gevonden."
+        # Alleen filteren als we nog geen GL codes hadden (anders is het te streng), 
+        # tenzij expliciet als verfijning bedoeld. Laten we het toepassen als verfijning.
+        subset = subset[mask]
         
-    # Totaal berekenen (AmountDC_num is al schoon!)
+    debug_info["final_count"] = len(subset)
+
+    # 4. Resultaat Bouwen
+    if len(subset) == 0:
+        return "Geen transacties gevonden in CSV.", debug_info
+        
     total = subset['AmountDC_num'].sum()
     
-    # Samenvatting maken
-    if len(subset) > 50:
-        # Groepeer per GL Omschrijving
+    if len(subset) > 40:
         summary = subset.groupby('Finny_GLDescription')['AmountDC_num'].sum().reset_index()
-        return f"""
-        --- CSV ANALYSE ---
-        Gevonden boekingen: {len(subset)}
-        TOTAAL BEDRAG: € {total:,.2f}
+        summary['AmountDC_num'] = summary['AmountDC_num'].apply(lambda x: f"€ {x:,.2f}")
+        txt = f"""
+        **Resultaat uit Transacties (CSV):**
+        - Aantal boekingen: {len(subset)}
+        - **Totaal: € {total:,.2f}**
         
-        Uitsplitsing per categorie:
-        {summary.to_string(index=False)}
+        **Per Categorie:**
+        {summary.to_markdown(index=False)}
         """
+        return txt, debug_info
     else:
-        # Details tonen
-        cols = ['EntryDate', 'AccountName', 'Description', 'AmountDC_num']
-        return f"""
-        --- CSV DETAILS ---
-        TOTAAL: € {total:,.2f}
+        # Details
+        disp_cols = ['EntryDate', 'AccountName', 'Description', 'AmountDC_num']
+        # Check welke kolommen bestaan
+        final_cols = [c for c in disp_cols if c in subset.columns]
         
-        {subset[cols].to_string(index=False)}
+        txt = f"""
+        **Details uit Transacties (CSV):**
+        - Totaal geselecteerd: **€ {total:,.2f}**
+        
         """
+        # Dataframe naar string zonder index
+        txt += subset[final_cols].to_markdown(index=False)
+        return txt, debug_info
 
 # ==========================================
-# 4. MAIN APP
+# 4. MAIN APP UI
 # ==========================================
 if check_password():
     if "OPENAI_API_KEY" in st.secrets:
@@ -204,61 +240,82 @@ if check_password():
     with st.sidebar:
         if os.path.exists("finny_logo.jpg"):
             st.image("finny_logo.jpg", width=150)
-        st.markdown("### 🏢 Van Hattem Advies")
+        st.markdown("### 🏢 Finny Dashboard")
         
-        # Laad data
         data = load_data()
         
         if data["trans"] is not None:
-            st.success(f" ✅ Transacties ({len(data['trans'])} regels)")
+            st.success(f"✅ CSV Geladen: {len(data['trans'])} regels")
+            st.info(f"📅 Jaren in data: {data['years_available']}")
         else:
-            st.error(" ❌ CSV niet gevonden")
-        
-        if st.button("Reset Sessie"): st.rerun()
+            st.error("❌ Geen CSV data")
+            
+        if st.button("Herstarten"): st.rerun()
 
-    # Chat
-    st.title(" 👋 Goedemiddag, Michiel.")
-    st.markdown("Ik heb inzicht in je cijfers t/m vandaag.")
+    # Chat Interface
+    st.title("🦁 Finny 5.4")
+    st.markdown("Stel je vraag over de administratie.")
 
     if "messages" not in st.session_state: st.session_state.messages = []
     for msg in st.session_state.messages: st.chat_message(msg["role"]).write(msg["content"])
 
-    if prompt := st.chat_input("Stel je vraag..."):
+    if prompt := st.chat_input("Bijv: Wat zijn de autokosten in 2023?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
         
         with st.chat_message("assistant"):
-            with st.spinner("Finny denkt na..."):
-                # Stap 1: Plan
-                plan = get_finny_plan(client, prompt, data["syllabus"])
+            # 1. PLAN
+            plan = get_finny_plan(client, prompt, data["syllabus"], data["years_available"])
+            
+            # 2. EXECUTE
+            csv_context = ""
+            debug_data = None
+            
+            if plan["source"] in ["CSV", "BOTH"]:
+                csv_text, debug_data = execute_csv_query(plan, data["trans"])
+                csv_context += csv_text
                 
-                # Debug info voor jou (zodat je ziet dat hij de syllabus gebruikt)
-                st.caption(f" 🧠 Strategie: {plan['source']} | Zoekt: {plan['gl_codes']} / {plan['search_terms']}")
+            if plan["source"] in ["PDF", "BOTH"]:
+                csv_context += f"\n\nCONTEXT UIT PDF:\n{data['pdf_text']}"
+            
+            # 3. ANSWER
+            try:
+                system_msg = f"""
+                Je bent Finny, de financieel assistent.
+                Gebruik ONDERSTAANDE data om antwoord te geven.
                 
-                # Stap 2: Data verzamelen
-                context = ""
-                if plan["source"] in ["CSV", "BOTH"]:
-                    context += execute_csv_query(plan, data["trans"])
-                if plan["source"] in ["PDF", "BOTH"]:
-                    context += data["pdf_text"]
+                GEVONDEN DATA:
+                {csv_context}
                 
-                # Stap 3: Antwoord
-                try:
-                    messages = [
-                        {"role": "system", "content": f"""
-                        Je bent Finny. Antwoord op basis van deze data:
-                        {context}
-                        
-                        REGELS:
-                        1. Als er CSV data is met een totaalbedrag, gebruik dat EXACT. Reken niet zelf opnieuw.
-                        2. Als de vraag over de jaarrekening gaat, citeer de PDF.
-                        3. Wees zakelijk en kort.
-                        """},
+                INSTRUCTIES:
+                - Als er CSV data is (tabellen/bedragen), gebruik die EXACT. Ga niet hallucineren.
+                - Als er 'Geen transacties' staat, zeg dat dan eerlijk en suggereer een ander jaar of zoekterm.
+                - Antwoord kort en zakelijk in Markdown.
+                """
+                
+                completion = client.chat.completions.create(
+                    model="gpt-4o-mini", 
+                    messages=[
+                        {"role": "system", "content": system_msg},
                         {"role": "user", "content": prompt}
                     ]
-                    completion = client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0)
-                    response = completion.choices[0].message.content
-                    st.write(response)
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                except Exception as e:
-                    st.error(f"Fout: {e}")
+                )
+                answer = completion.choices[0].message.content
+                st.write(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+                
+                # 4. DEBUG EXPANDER (Voor jou, om te zien wat er misgaat)
+                with st.expander("🔧 Finny's Denkproces (Debug Info)"):
+                    st.write(f"**Strategie:** {plan.get('source')}")
+                    st.write(f"**Gezochte Jaren:** {plan.get('years')}")
+                    st.write(f"**Gezochte Codes:** {plan.get('gl_codes')}")
+                    if debug_data:
+                        st.write("--- Filter Stats ---")
+                        st.write(f"Totaal regels data: {debug_data.get('start_count')}")
+                        st.write(f"Na jaarfilter ({plan.get('years')}): {debug_data.get('after_year_filter')}")
+                        st.write(f"Na codefilter ({plan.get('gl_codes')}): {debug_data.get('after_code_filter')}")
+                        st.write("--- Data Voorbeeld ---")
+                        st.dataframe(data["trans"].head(3))
+
+            except Exception as e:
+                st.error(f"Fout bij genereren antwoord: {e}")
