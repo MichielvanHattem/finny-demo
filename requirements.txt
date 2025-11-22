@@ -1,5 +1,6 @@
-streamlit
+streamlit>=1.30.0
 pandas
-openai
-PyPDF2
+openai>=1.0.0
+pypdf
 python-dotenv
+matplotlib
