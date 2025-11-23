@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Finny", layout="wide")
 load_dotenv()
 
-# Geheugen
 if "active_years" not in st.session_state:
     st.session_state["active_years"] = [2024]
 if "messages" not in st.session_state: 
@@ -49,7 +48,6 @@ def load_data():
                 if not valid_years.empty:
                     data["latest_year"] = int(valid_years.max())
 
-            # Universal Search (Alles doorzoekbaar maken)
             cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
             existing = [c for c in cols if c in df.columns]
             df['UniversalSearch'] = df[existing].astype(str).agg(' '.join, axis=1).str.lower()
@@ -57,7 +55,7 @@ def load_data():
             data["trans"] = df
         except Exception as e: st.error(f"Fout Transacties: {e}")
 
-    # B. SYNONIEMEN
+    # B. SYNONIEMEN (De Bron van Waarheid voor Categorieën)
     if os.path.exists("Finny_Synonyms.csv"):
         try:
             df = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=str)
@@ -93,23 +91,21 @@ def load_data():
 # 3. LOGICA
 
 def get_intent(client, question):
-    """
-    Router: Bepaalt Bron (PDF/CSV) en Context (Jaren).
-    """
+    """Router: Bepaalt Bron & Keywords."""
     context_years = st.session_state["active_years"]
     if not context_years: context_years = [2024]
     
     system_prompt = f"""
-    Je bent de router van Finny.
+    Je bent de router.
     CONTEXT: Huidige focusjaren: {context_years}.
     
-    TAAK: Bepaal de bron.
-    1. 'PDF' -> ALLEEN voor: Totale Winst, Totale Omzet, Balanstotaal, Solvabiliteit.
-    2. 'CSV' -> ALTIJD voor: Specifieke kosten (Telefoon, Auto, Huisvesting, Kantoor), leveranciers, detailvragen.
-       (Zelfs als de gebruiker vraagt "Wat zijn de totale telefoonkosten?", is dit CSV).
+    TAAK:
+    1. 'source': 'PDF' (winst/balans/omzet) of 'CSV' (kosten/details/leveranciers).
+    2. 'analysis_type': 'lookup' (bedrag zoeken) of 'trend' (verloop).
+    3. 'years': Welke jaren?
+    4. 'keywords': Zoekwoorden (bv "auto").
     
-    Output JSON: {{"source": "CSV"|"PDF", "years": [2022, 2023, 2024], "keywords": ["zoekterm"]}}
-    ALS GEEN JAAR GENOEMD: Gebruik de jaren uit de CONTEXT.
+    Output JSON.
     """
     try:
         res = client.chat.completions.create(
@@ -124,101 +120,85 @@ def get_intent(client, question):
             st.session_state["active_years"] = intent['years']
         else:
             intent['years'] = context_years
-            
         return intent
     except:
-        return {"source": "PDF", "keywords": [], "years": context_years}
+        return {"source": "PDF", "analysis_type": "lookup", "keywords": [], "years": context_years}
 
-def expand_search_terms(keywords):
+def analyze_csv_costs(data, intent):
     """
-    Slimme Synoniemen Booster.
-    Als de gebruiker 'telefoon' zegt, zoeken we ook op 'communicatie'.
-    """
-    expanded = set(keywords)
-    mapping = {
-        'telefoon': ['communicatie', 'mobiel', 'internet', 'bellen', 'kpn', 'vodafone', 't-mobile', 'ziggo'],
-        'communicatie': ['telefoon', 'internet', 'data', 'mobiel'],
-        'auto': ['vervoer', 'brandstof', 'lease', 'parkeren', 'tank', 'kilometer'],
-        'kantoor': ['huisvesting', 'huur', 'inventaris', 'bureau', 'supplies'],
-        'personeel': ['loon', 'salaris', 'sociale', 'verzekering']
-    }
-    
-    for k in keywords:
-        for key, values in mapping.items():
-            if key in k.lower():
-                expanded.update(values)
-    
-    return list(expanded)
-
-def analyze_csv_specific(data, intent):
-    """
-    Specifieke Kosten Analyse (CSV).
-    Maakt een harde tabel per jaar voor de gevraagde kostenpost.
+    Analyseert kosten en pakt de Paraplu-categorie uit de Synoniemen CSV.
     """
     if data["trans"] is None: return "Geen transacties."
     
     df = data["trans"].copy()
     years = intent.get('years', [])
-    # Zorg dat jaren strings zijn voor matching
     years = sorted([str(y) for y in years])
-    
-    raw_keywords = intent.get('keywords', [])
-    # Breid zoektermen uit (Telefoon -> Communicatie)
-    keywords = expand_search_terms(raw_keywords)
+    keywords = intent.get('keywords', [])
     
     # 1. Filter Jaren
     df = df[df['Year_Clean'].isin(years)]
     if df.empty: return f"Geen data voor jaren {years}."
 
-    # 2. Filter op 'Echte' Kosten (Geen resultaatboekingen)
+    # 2. Filter 'Echte' Kosten (Weg met resultaatboekingen)
     mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
     df = df[~mask_tech]
 
-    # 3. Filter op Zoektermen (Universal Search)
+    # 3. BEPAAL CATEGORIE UIT SYNONIEMEN CSV
+    found_categories = set()
+    
+    # Als er zoekwoorden zijn, kijken we in de synoniemenlijst bij welke Categorie die horen
+    if keywords and data["syn"] is not None:
+        for k in keywords:
+            # Zoek keyword in synoniemenlijst
+            matches = data["syn"][data["syn"]['Synoniem'].str.contains(k.lower(), na=False)]
+            if not matches.empty and 'Categorie' in matches.columns:
+                found_categories.update(matches['Categorie'].unique().tolist())
+
+    # 4. BEREKENINGEN
+
+    # A. Specifieke Zoekopdracht (Op basis van zoekwoord zelf)
+    df_specific = pd.DataFrame()
     if keywords:
         pattern = '|'.join([re.escape(k.lower()) for k in keywords])
-        # We zoeken ook in de RGS-omschrijvingen via de koppeling, maar UniversalSearch bevat GLDescription al.
-        mask_text = df['UniversalSearch'].str.contains(pattern, na=False)
+        mask_spec = df['UniversalSearch'].str.contains(pattern, na=False)
+        df_specific = df[mask_spec]
+    
+    # B. Categorie Totaal (De Paraplu)
+    df_category = pd.DataFrame()
+    if found_categories:
+        # Filter transacties waarvan de GL Description overeenkomt met de gevonden Categorieën
+        # We maken een regex van de gevonden categorieën
+        cat_pattern = '|'.join([re.escape(c) for c in found_categories])
+        mask_cat = df['Finny_GLDescription'].astype(str).str.contains(cat_pattern, case=False, na=False)
+        df_category = df[mask_cat]
+    else:
+        # Als er geen categorie gevonden is in de CSV, maar wel een zoekwoord, is df_category gelijk aan df_specific
+        # Als er GEEN zoekwoord is (algemene vraag), is df_category ALLES (kosten)
+        if not keywords:
+             df_category = df[df['Finny_GLCode'].str.startswith('4', na=False)] # Alle kosten
+
+    # 5. Output Bouwen
+    res = f"### ANALYSE ({', '.join(years)})\n"
+    
+    # Tabel Specifiek
+    if not df_specific.empty:
+        pivot_spec = df_specific.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
+        pivot_spec.columns = ['Jaar', f'Specifiek ("{", ".join(keywords)}")']
+        res += pivot_spec.to_markdown(index=False, floatfmt=".2f") + "\n\n"
+    elif keywords:
+        res += f"Geen specifieke transacties voor '{keywords}'.\n\n"
+
+    # Tabel Categorie (Alleen tonen als we een categorie hebben gevonden)
+    if not df_category.empty and found_categories:
+        cat_names = ", ".join(found_categories)
+        pivot_cat = df_category.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
+        pivot_cat.columns = ['Jaar', f'Totaal Categorie: {cat_names}']
+        res += pivot_cat.to_markdown(index=False, floatfmt=".2f") + "\n"
         
-        # Extra check: Filter ook op GL Codes die in RGS/Synoniemen matchen
-        target_codes = []
-        if data["rgs"] is not None:
-            rgs_hits = data["rgs"][data["rgs"]['SearchBlob'].str.contains(pattern, na=False)]
-            target_codes.extend(rgs_hits['Finny_GLCode'].tolist())
-            
-        if target_codes:
-            mask_code = df['Finny_GLCode'].isin(target_codes)
-            df = df[mask_text | mask_code]
-        else:
-            df = df[mask_text]
-
-    if df.empty:
-        return f"Ik zie geen transacties voor '{raw_keywords}' in {years}."
-
-    # 4. Groeperen per Jaar (Harde Cijfers)
-    # We sommeren alles wat we gevonden hebben per jaar
-    pivot = df.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
-    pivot.columns = ['Jaar', 'Bedrag']
-    
-    # Zorg dat alle gevraagde jaren erin staan (ook als bedrag 0 is)
-    for y in years:
-        if y not in pivot['Jaar'].values:
-            pivot = pd.concat([pivot, pd.DataFrame({'Jaar': [y], 'Bedrag': [0.0]})])
-            
-    pivot = pivot.sort_values('Jaar')
-
-    # 5. Output Maken
-    res = f"### KOSTEN OVERZICHT: {', '.join(raw_keywords).upper()}\n\n"
-    
-    # Tabel genereren
-    res += "| Jaar | Totaal Bedrag |\n|---|---|\n"
-    for _, row in pivot.iterrows():
-        res += f"| {row['Jaar']} | € {row['Bedrag']:,.2f} |\n"
-    
-    # Grootste posten tonen (Details)
-    res += "\n**Grootste boekingen/posten in deze selectie:**\n"
-    top_items = df.groupby(['Description', 'Year_Clean'])['AmountDC_num'].sum().reset_index().sort_values('AmountDC_num', ascending=False).head(5)
-    res += top_items.to_markdown(index=False, floatfmt=".2f")
+        # Top 5 binnen categorie
+        res += f"\n**Grootste kostenposten binnen {cat_names}:**\n"
+        top = df_category.groupby('Description')['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
+        res += top.to_markdown(index=False, floatfmt=".2f")
 
     return res
 
@@ -240,12 +220,11 @@ if check_password():
         if logo_files: st.image(logo_files[0], width=150)
             
         st.title("Finny")
-        
         if data["trans"] is not None:
             if not st.session_state["active_years"]:
                 st.session_state["active_years"] = [str(data["latest_year"])]
             st.caption(f"Geheugen: {st.session_state['active_years']}")
-        
+            
         if st.button("Nieuw Gesprek"): 
             st.session_state["active_years"] = [str(data["latest_year"])]
             st.session_state.messages = []
@@ -269,25 +248,17 @@ if check_password():
                     context = data["pdf_text"]
                     st.caption(f"Bron: Jaarrekening | Jaren: {intent['years']}")
                 else:
-                    # CSV Analyse
-                    context = analyze_csv_specific(data, intent)
-                    st.caption(f"Bron: Transacties | Focus: {intent['keywords']} | Jaren: {intent['years']}")
+                    context = analyze_csv_costs(data, intent)
+                    st.caption(f"Bron: Transacties | Focus: {intent['keywords']}")
                 
                 system_prompt_finny = """
-                Je bent Finny, een informele financiële assistent.
-                STIJL:
-                - Spreek aan met 'je/jij'.
-                - GEEN briefformaat (geen "Geachte", geen "Groet").
-                - Direct en zakelijk.
-                
-                INSTRUCTIES:
-                - Gebruik de TABEL uit de context.
-                - Als er voor een jaar € 0.00 staat, zeg dan dat er geen kosten waren.
-                - Verzin geen bedragen.
-                - Als je een stijging/daling ziet in de tabel, benoem die.
+                Je bent Finny.
+                - Spreek aan met 'je'.
+                - Geen aanhef/afsluiting.
+                - Gebruik de TABELLEN uit de context.
+                - Vergelijk Specifiek vs Categorie indien beschikbaar.
                 """
                 
-                # History meesturen
                 messages_payload = [{"role": "system", "content": f"{system_prompt_finny}\n\nDATA:\n{context}"}]
                 for msg in st.session_state.messages[-5:]:
                     role = "user" if msg["role"] == "user" else "assistant"
