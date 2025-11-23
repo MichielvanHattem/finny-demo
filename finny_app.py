@@ -166,4 +166,146 @@ def get_financial_answer(question: str, df_trans: pd.DataFrame, gl_codes):
     years = extract_years(question)
     if years and "Finny_Year" in filtered_df.columns:
         filtered_df = filtered_df[filtered_df["Finny_Year"].isin(years)]
-        period_text = ", ".join(map_
+        period_text = ", ".join(map(str, years))
+    else:
+        period_text = "totaal (alle jaren)"
+
+    # Stap 3: Sommeer
+    if "AmountDC_num" in filtered_df.columns:
+        total_amount = filtered_df["AmountDC_num"].sum()
+    else:
+        total_amount = 0.0
+
+    # Groepeer per jaar voor detail
+    if not filtered_df.empty and "Finny_Year" in filtered_df.columns:
+        per_year = filtered_df.groupby("Finny_Year")["AmountDC_num"].sum().to_dict()
+    else:
+        per_year = {}
+
+    return total_amount, per_year, period_text, filtered_df
+
+
+# ------------------------------------------------------------------
+# 5. DE INTERFACE
+# ------------------------------------------------------------------
+col1, col2 = st.columns([1, 4])
+
+with col1:
+    # Gebruik expliciet het Finny-logo als dat bestaat
+    if os.path.exists("finny_logo.png"):
+        st.image("finny_logo.png", width=120)
+    else:
+        # Fallback: pak eerste willekeurige afbeelding in de map
+        logo_files = glob.glob("*.jpg") + glob.glob("*.png")
+        if logo_files:
+            st.image(logo_files[0], width=120)
+        else:
+            st.write("Finny")
+
+with col2:
+    st.title("Finny")
+    st.markdown("**Financial Assistant v11** - *Powered by PDF & CSV*")
+
+# Chatgeschiedenis in session_state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Toon historie
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+# Chat input
+prompt = st.chat_input(
+    "Vraag Finny (bijv. 'Wat zijn de telefoonkosten?' of 'Wat zegt het jaarverslag?')..."
+)
+
+if prompt:
+    # Toon gebruikersbericht
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
+
+    full_response_parts = []
+
+    # 1. SCAN PDF (Documenten)
+    pdf_results = search_pdfs(prompt)
+    if pdf_results:
+        pdf_lines = ["**📄 Gevonden in documenten:**"]
+        for res in pdf_results:
+            pdf_lines.append(
+                f"- *{res['file']} (p.{res['page']})*: \"...{res['snippet']}...\""
+            )
+        full_response_parts.append("\n".join(pdf_lines))
+        full_response_parts.append("\n---\n")
+
+    # 2. SCAN CSV (Harde Cijfers)
+    gl_codes = []
+    debug_info = []
+
+    if df_trans is not None and df_syn is not None and df_rgs is not None:
+        gl_codes, debug_info = find_gl_codes(prompt, df_syn, df_rgs)
+
+        if gl_codes:
+            # We hebben een match in de boekhouding
+            total, per_year, period_text, detail_df = get_financial_answer(
+                prompt, df_trans, gl_codes
+            )
+
+            # Pak de naam van de rekening voor de display
+            if not detail_df.empty and "Finny_GLDescription" in detail_df.columns:
+                rekening_naam = detail_df.iloc[0]["Finny_GLDescription"]
+            else:
+                rekening_naam = "Geselecteerde post"
+
+            csv_text_lines = ["**📊 Boekhouding (Transacties):**"]
+            # Format getal (NL notatie)
+            total_fmt = (
+                f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            )
+
+            csv_text_lines.append(
+                f"Op **{rekening_naam}** zie ik in {period_text} een totaal van **{total_fmt}**."
+            )
+
+            # Detail per jaar indien nuttig
+            if per_year and (len(per_year) > 1 or "per jaar" in prompt.lower()):
+                csv_text_lines.append("\n**Verdeling per jaar:**")
+                for year, amount in per_year.items():
+                    fmt = (
+                        f"€ {amount:,.2f}"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", ".")
+                    )
+                    csv_text_lines.append(f"- {year}: {fmt}")
+
+            full_response_parts.append("\n".join(csv_text_lines))
+
+        elif not pdf_results:
+            # Geen PDF en geen CSV match
+            full_response_parts.append(
+                "😕 Ik kan het antwoord niet vinden in de PDF's en herken ook geen categorie voor de boekhouding. Probeer een andere term."
+            )
+
+        if not gl_codes and pdf_results:
+            full_response_parts.append(
+                "\n*(Ik heb geen specifieke boekhoudtransacties gevonden voor deze vraag, dus ik baseer me op de tekst hierboven).*"
+            )
+    else:
+        if not pdf_results:
+            full_response_parts.append("⚠️ CSV data kon niet geladen worden.")
+
+    # Bouw definitief antwoord
+    full_response = "\n".join(full_response_parts).strip()
+    if not full_response:
+        full_response = "Ik heb geen relevante gegevens kunnen vinden voor deze vraag."
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    st.chat_message("assistant").write(full_response)
+
+    # Debug info
+    with st.expander("🔍 Finny's Brein"):
+        if pdf_results:
+            st.write("Gevonden in PDF:", pdf_results)
+        if df_trans is not None and gl_codes:
+            st.write(f"Gekoppelde GL codes: {gl_codes}")
+            st.write("Logica:", debug_info)
