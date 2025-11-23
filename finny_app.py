@@ -8,14 +8,15 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# 1. CONFIGURATIE
-# Icoon aangepast naar zakelijke vrouw
-st.set_page_config(page_title="Finny", page_icon="👩‍💼", layout="wide")
+# 1. CONFIGURATIE & STATE
+st.set_page_config(page_title="Finny", layout="wide")
 load_dotenv()
 
-# Geheugen initialisatie (Default leeg, wordt gevuld door data)
+# Initialiseer Geheugen
 if "active_years" not in st.session_state:
-    st.session_state["active_years"] = []
+    st.session_state["active_years"] = [2024] # Default
+if "messages" not in st.session_state: 
+    st.session_state.messages = []
 
 def check_password():
     if "password_correct" not in st.session_state:
@@ -26,7 +27,7 @@ def check_password():
 # 2. DATA LADEN
 @st.cache_data
 def load_data():
-    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": "", "years_found": []}
+    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": ""}
     
     def clean_code(val):
         return str(val).split('.')[0].strip()
@@ -36,22 +37,19 @@ def load_data():
         try:
             df = pd.read_csv("Finny_Transactions.csv", sep=";", dtype=str)
             
-            # Bedragen
+            # Bedragen naar float
             if 'AmountDC_num' in df.columns:
                 df['AmountDC_num'] = df['AmountDC_num'].str.replace(',', '.').replace('nan', '0')
                 df['AmountDC_num'] = pd.to_numeric(df['AmountDC_num'], errors='coerce').fillna(0.0)
             
-            # Codes
+            # Codes & Jaren cleanen
             if 'Finny_GLCode' in df.columns:
                 df['Finny_GLCode'] = df['Finny_GLCode'].apply(clean_code)
-            
-            # Jaren (Cruciaal voor jouw vraag!)
             if 'Finny_Year' in df.columns:
+                # Zorg dat jaren integers zijn voor filteren
                 df['Year_Clean'] = df['Finny_Year'].astype(str).str.split('.').str[0]
-                # Sla op welke jaren we hebben gevonden voor de sidebar
-                data["years_found"] = sorted(df['Year_Clean'].unique().tolist())
 
-            # Universal Search kolom
+            # Universal Search kolom (voor Lookups)
             search_cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
             existing_cols = [c for c in search_cols if c in df.columns]
             df['UniversalSearch'] = df[existing_cols].astype(str).agg(' '.join, axis=1).str.lower()
@@ -92,23 +90,27 @@ def load_data():
         
     return data
 
-# 3. LOGICA
+# 3. LOGICA: INTENT & ANALYSE
 
 def get_intent(client, question):
-    """Router en Geheugen."""
-    # Pak context uit sessie (wat was het laatste jaar waar we over praatten?)
-    active_years = st.session_state["active_years"]
+    """
+    Bepaalt Bron, Jaren en Analyse Type.
+    """
+    context_years = st.session_state["active_years"]
     
     system_prompt = f"""
-    Je bent de router.
-    CONTEXT: De gebruiker had het eerder over deze jaren: {active_years}.
+    Je bent de router van Finny.
+    CONTEXT: De gebruiker had het zojuist over de jaren: {context_years}.
     
-    TAAK:
-    1. 'source': 'PDF' (jaarrekening/winst/balans) of 'CSV' (kosten/details/leveranciers).
-    2. 'keywords': zelfstandige naamwoorden (bijv: "kantoorkosten", "auto").
-    3. 'years': Jaren in de vraag. ALS GEEN JAAR: Gebruik de jaren uit CONTEXT. Als context leeg is, gebruik 2024.
+    TAAK: Analyseer de nieuwe vraag.
+    1. 'source': 'PDF' (winst/balans/omzet/solvabiliteit) of 'CSV' (kosten/details/facturen/trends).
+    2. 'analysis_type': 
+       - 'lookup' (zoek specifiek bedrag/factuur, bv: "kosten vodafone")
+       - 'trend' (zoek stijgers/dalers/grootste posten, bv: "welke kosten lopen op?", "grootste kosten", "wat zijn mijn kosten?")
+    3. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik de jaren uit CONTEXT.
+    4. 'keywords': Zoekwoorden. Bijv ["auto"]. Als er gevraagd wordt naar "mijn kosten" (totaal), laat dit leeg.
     
-    Output JSON: {{"source": "CSV"|"PDF", "years": [2024], "keywords": ["zoekterm"]}}
+    Output JSON: {{"source": "CSV"|"PDF", "analysis_type": "lookup"|"trend", "years": [2022, 2023], "keywords": ["..."]}}
     """
     try:
         res = client.chat.completions.create(
@@ -119,78 +121,84 @@ def get_intent(client, question):
         )
         intent = json.loads(res.choices[0].message.content)
         
-        # Update het geheugen van Finny
-        if intent.get('years'):
+        # Update geheugen
+        if intent.get('years') and len(intent['years']) > 0:
             st.session_state["active_years"] = intent['years']
+        else:
+            intent['years'] = st.session_state["active_years"]
             
         return intent
     except:
-        return {"source": "PDF", "keywords": [], "years": st.session_state["active_years"] or ['2024']}
+        return {"source": "PDF", "analysis_type": "lookup", "keywords": [], "years": st.session_state["active_years"]}
 
-def query_csv_universal(data, intent):
-    """Zoekmachine."""
-    if data["trans"] is None: return "Geen transacties.", []
+def analyze_csv_costs(data, intent):
+    """
+    Slimme CSV Analyse voor Kosten & Trends.
+    Houdt rekening met gesloten boekjaren.
+    """
+    if data["trans"] is None: return "Geen transacties geladen."
     
     df = data["trans"].copy()
-    keywords = intent.get('keywords', [])
     years = intent.get('years', [])
-    debug_info = []
+    years = sorted([str(y) for y in years]) # Jaren als strings voor matching
+    keywords = intent.get('keywords', [])
+    
+    if not years:
+        return "Geen jaren geselecteerd voor analyse."
 
-    # 1. Jaar Filter
-    if years and 'Year_Clean' in df.columns:
-        years_str = [str(y) for y in years]
-        df = df[df['Year_Clean'].isin(years_str)]
-        debug_info.append(f"📅 Jaren: {years_str}")
+    # 1. Filter op Jaren
+    df = df[df['Year_Clean'].isin(years)]
+    if df.empty:
+        return f"Geen data gevonden voor jaren {years}."
 
+    # --- STAP 2: Filteren op 'Echte' Kosten (Gesloten Boekjaar Fix) ---
+    
+    # A. Verwijder afsluitboekingen op tekst
+    # Boekingen met 'Resultaat', 'Winst', 'Balans' in de omschrijving zijn vaak technische boekingen
+    mask_closing = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting|verdeling)', case=False, na=False)
+    df = df[~mask_closing]
+
+    # B. Filter op Kostenrekeningen (RGS Rubriek 4)
+    # Als we geen specifieke keywords hebben (bv vraag "Wat zijn mijn kosten?"), 
+    # pakken we alleen GL codes die beginnen met '4' (Kosten in RGS).
+    # Als we wel keywords hebben (bv "Auto"), vertrouwen we op de zoekterm en filteren we minder hard op rubriek.
     if not keywords:
-        return "Geen zoektermen.", debug_info
+        # Algemene kostenvraag -> Alleen Rubriek 4
+        df = df[df['Finny_GLCode'].str.startswith('4', na=False)]
+    else:
+        # Specifieke vraag -> Zoek op keywords in description/categorie
+        pattern = '|'.join([re.escape(k.lower()) for k in keywords])
+        mask_text = df['UniversalSearch'].str.contains(pattern, na=False)
+        df = df[mask_text]
 
-    # 2. Codes Zoeken
-    target_codes = set()
-    for k in keywords:
-        word = k.lower()
-        # Synoniemen
-        if data["syn"] is not None:
-            matches = data["syn"][data["syn"]['Synoniem'].str.contains(word, na=False)]
-            if not matches.empty:
-                found = matches['Finny_GLCode'].tolist()
-                target_codes.update(found)
-                debug_info.append(f"✅ Synoniem '{word}' -> {found}")
-        # RGS
-        if data["rgs"] is not None:
-            matches = data["rgs"][data["rgs"]['SearchBlob'].str.contains(word, na=False)]
-            if not matches.empty:
-                found = matches['Finny_GLCode'].tolist()
-                target_codes.update(found)
-                debug_info.append(f"✅ RGS '{word}' -> {found}")
-
-    # 3. Filteren
-    mask_code = pd.Series([False] * len(df), index=df.index)
-    if target_codes:
-        mask_code = df['Finny_GLCode'].isin(list(target_codes))
-
-    pattern = '|'.join([re.escape(k.lower()) for k in keywords])
-    mask_text = df['UniversalSearch'].str.contains(pattern, na=False)
-
-    df_final = df[mask_code | mask_text]
-
-    # 4. Resultaat (Gebruik Markdown tabel voor nette weergave)
-    count = len(df_final)
-    total = df_final['AmountDC_num'].sum()
+    # 3. Groeperen en Analyseren
+    # We groeperen per Categorie (GL Description) en Jaar
+    pivot = df.groupby(['Finny_GLDescription', 'Year_Clean'])['AmountDC_num'].sum().unstack(fill_value=0)
     
-    if count == 0:
-        return f"Geen data gevonden voor '{keywords}' in {years}.", debug_info
+    # 4. Resultaat Maken
+    if pivot.empty:
+        return "Geen kosten gevonden na filtering (afsluitboekingen zijn weggelaten)."
+
+    # Sorteer op het laatste jaar
+    last_year = years[-1]
+    if last_year in pivot.columns:
+        pivot = pivot.sort_values(last_year, ascending=False)
+
+    res = f"### KOSTEN ANALYSE ({', '.join(years)})\n"
+    res += "*(Afsluitboekingen en resultaatverdelingen zijn uitgezonderd)*\n\n"
     
-    res = f"Gevonden: {count} transacties.\nTotaal: € {total:,.2f}\n\n"
+    # Als we meerdere jaren hebben, bereken verschil
+    if len(years) > 1:
+        first_year = years[0]
+        if first_year in pivot.columns and last_year in pivot.columns:
+            pivot['Verschil'] = pivot[last_year] - pivot[first_year]
+            # Sorteer op grootste stijgers (grootste positieve verschil)
+            pivot = pivot.sort_values('Verschil', ascending=False)
     
-    cols = ['EntryDate', 'Description', 'AccountName', 'Finny_GLDescription', 'AmountDC_num']
-    valid_cols = [c for c in cols if c in df_final.columns]
+    # Toon top 15 rijen
+    res += pivot.head(15).to_markdown(floatfmt=".2f")
     
-    limit = 100
-    # Hier gebruiken we to_markdown() wat tabulate nodig heeft
-    res += df_final[valid_cols].head(limit).to_markdown(index=False, floatfmt=".2f")
-            
-    return res, debug_info
+    return res
 
 # 4. UI
 if check_password():
@@ -206,28 +214,21 @@ if check_password():
     data = load_data()
 
     with st.sidebar:
-        # LOGO
-        image_files = glob.glob("*.png") + glob.glob("*.jpg")
-        if image_files:
-            st.image(image_files[0], width=150)
-        else:
-            st.title("Finny") # Fallback tekst
+        # Logo
+        logo_files = glob.glob("*.png") + glob.glob("*.jpg")
+        if logo_files: st.image(logo_files[0], width=150)
             
-        st.markdown("### Status")
-        if data["trans"] is not None: 
-            st.success(f"Transacties: {len(data['trans'])}")
-            # LAAT ZIEN WELKE JAREN ER ZIJN
-            if data["years_found"]:
-                st.info(f"Beschikbare jaren: {', '.join(data['years_found'])}")
-        
-        if st.button("Reset"): 
-            st.session_state["active_years"] = []
+        st.title("Finny")
+        st.caption(f"Geheugen: {st.session_state['active_years']}")
+        if st.button("Nieuw Gesprek"): 
+            st.session_state["active_years"] = [2024]
+            st.session_state.messages = []
             st.rerun()
 
-    st.title("Finny Demo")
+    st.title("Finny")
     
-    if "messages" not in st.session_state: st.session_state.messages = []
-    for msg in st.session_state.messages: st.chat_message(msg["role"]).write(msg["content"])
+    for msg in st.session_state.messages: 
+        st.chat_message(msg["role"]).write(msg["content"])
             
     if prompt := st.chat_input("Vraag Finny..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -235,31 +236,44 @@ if check_password():
         
         with st.chat_message("assistant"):
             with st.spinner("..."):
+                # 1. Router
                 intent = get_intent(client, prompt)
                 
                 context = ""
+                # 2. Data Ophalen
                 if intent['source'] == "PDF":
                     context = data["pdf_text"]
-                    st.caption(f"Bron: PDF | Focus: {intent['years']}")
                 else:
-                    res_text, debug_log = query_csv_universal(data, intent)
-                    context = res_text
-                    with st.expander("🔍 Zoekdetails"):
-                        st.write(f"**Zoektermen:** {intent['keywords']} | **Jaren:** {intent['years']}")
-                        for step in debug_log: st.write(step)
+                    # CSV: Altijd via de slimme kosten-functie
+                    # Dit pakt zowel "lookups" als "trends" goed mee met de juiste filters
+                    context = analyze_csv_costs(data, intent)
                 
-                sys_msg = """
-                Je bent Finny. 
-                Gebruik de CONTEXT data voor je antwoord.
-                - De context bevat al een tabel en totalen. Gebruik die.
-                - Maak er een vriendelijk, zakelijk antwoord van.
+                # 3. Antwoord Genereren (TOON AANPASSING)
+                
+                system_prompt_finny = """
+                Je bent Finny, een informele financiële assistent.
+                
+                BELANGRIJKE STIJLREGELS:
+                - Spreek de gebruiker aan met 'je' en 'jij'.
+                - GEEN briefformaat! Dus GEEN "Geachte", GEEN "Met vriendelijke groet", GEEN "Finny" aan het eind.
+                - Antwoord direct en "to the point".
+                - Wees behulpzaam maar niet overdreven beleefd.
+                
+                INHOUD:
+                - Gebruik de tabel in de context voor je antwoord.
+                - Als je een trend ziet (stijging/daling), benoem die kort.
+                - Verzin geen cijfers.
                 """
+
+                # History opbouwen
+                messages_payload = [{"role": "system", "content": f"{system_prompt_finny}\n\nDATA CONTEXT:\n{context}"}]
+                for msg in st.session_state.messages[-5:]:
+                    role = "user" if msg["role"] == "user" else "assistant"
+                    messages_payload.append({"role": role, "content": msg["content"]})
+                
                 res = client.chat.completions.create(
                     model="gpt-4o-mini",
-                    messages=[
-                        {"role":"system", "content": sys_msg + f"\nCONTEXT:\n{context}"},
-                        {"role":"user", "content": prompt}
-                    ]
+                    messages=messages_payload
                 )
                 reply = res.choices[0].message.content
                 st.write(reply)
