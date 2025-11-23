@@ -17,40 +17,29 @@ def check_password():
         return False
     return st.session_state["password_correct"]
 
-# 2. DATA LADEN (ROBUUST & ALLES DOORZOEKBAAR MAKEN)
+# 2. DATA LADEN (SCHOON & STRICT)
 @st.cache_data
 def load_data():
     data = {"syn": None, "trans": None, "rgs": None, "pdf_text": ""}
     
-    # Hulpfunctie: codes schoonmaken (2600.0 -> 2600)
     def clean_code(val):
+        # Verwijder .0 en spaties (bijv "2600.0" -> "2600")
         return str(val).split('.')[0].strip()
 
     # A. TRANSACTIES
     if os.path.exists("Finny_Transactions.csv"):
         try:
             df = pd.read_csv("Finny_Transactions.csv", sep=";", dtype=str)
-            
             # Bedragen naar getal
             if 'AmountDC_num' in df.columns:
                 df['AmountDC_num'] = df['AmountDC_num'].str.replace(',', '.').replace('nan', '0')
                 df['AmountDC_num'] = pd.to_numeric(df['AmountDC_num'], errors='coerce').fillna(0.0)
-            
-            # Codes cleanen
+            # Codes cleanen voor exacte match
             if 'Finny_GLCode' in df.columns:
                 df['Finny_GLCode'] = df['Finny_GLCode'].apply(clean_code)
-            
             # Jaren cleanen
             if 'Finny_Year' in df.columns:
                 df['Year_Clean'] = df['Finny_Year'].astype(str).str.split('.').str[0]
-
-            # *** DE FIX: MAAK ALLES DOORZOEKBAAR ***
-            # We plakken alle relevante tekstkolommen aan elkaar in 'UniversalSearch'
-            # Zo vinden we 'Kantoor' ook als het in de Categorie of Leveranciersnaam staat.
-            search_cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
-            existing_cols = [c for c in search_cols if c in df.columns]
-            df['UniversalSearch'] = df[existing_cols].astype(str).agg(' '.join, axis=1).str.lower()
-
             data["trans"] = df
         except Exception as e: st.error(f"Fout Transacties: {e}")
 
@@ -70,8 +59,9 @@ def load_data():
             df = pd.read_csv("Finny_RGS.csv", sep=";", dtype=str)
             if 'Finny_GLCode' in df.columns:
                 df['Finny_GLCode'] = df['Finny_GLCode'].apply(clean_code)
-            # Ook RGS doorzoekbaar maken
-            df['SearchBlob'] = df.apply(lambda x: ' '.join(x.dropna().astype(str)).lower(), axis=1)
+            # RGS Omschrijving lowercase maken voor matching
+            if 'RGS_Omschrijving' in df.columns:
+                df['RGS_Omschrijving_Lower'] = df['RGS_Omschrijving'].astype(str).str.lower()
             data["rgs"] = df
         except: pass
 
@@ -87,16 +77,21 @@ def load_data():
         
     return data
 
-# 3. LOGICA
+# 3. LOGICA: DE IJZEREN KETEN
 
 def get_intent(client, question):
-    """Router."""
+    """
+    Stap 0: Haal ALLEEN de kernwoorden en het jaar uit de vraag.
+    Geen interpretatie, alleen extractie.
+    """
     system_prompt = """
-    Je bent de router.
-    1. 'PDF' -> Jaarrekening, balans, winst, strategie.
-    2. 'CSV' -> Vragen over specifieke kosten, leveranciers, bedragen, details.
+    Je bent een extractor. 
+    Haal de volgende elementen uit de vraag:
+    1. 'source': 'PDF' (als het gaat om winst/balans/omzet/totaalplaatje) of 'CSV' (kosten/bedragen/transacties).
+    2. 'keywords': De specifieke zelfstandige naamwoorden (bijv: "kantoorkosten", "auto", "telefoon").
+    3. 'years': De genoemde jaren (bijv: 2024).
     
-    Output JSON: {"source": "CSV"|"PDF", "years": [2023], "keywords": ["zoekterm"]}
+    Output JSON.
     """
     try:
         res = client.chat.completions.create(
@@ -109,79 +104,95 @@ def get_intent(client, question):
     except:
         return {"source": "PDF", "keywords": [], "years": []}
 
-def query_csv_universal(data, intent):
+def execute_iron_logic(data, intent):
     """
-    De Universele Zoekmachine.
-    Vindt alles via Synoniemen, RGS of Brede Tekst Match.
+    DE IJZEREN LOGICA (5 STAPPEN)
     """
-    if data["trans"] is None: return "Geen transacties.", []
+    if data["trans"] is None: return "Geen transacties geladen.", []
     
-    df = data["trans"].copy()
     keywords = intent.get('keywords', [])
     years = intent.get('years', [])
-    debug_info = []
+    
+    log_steps = [] # Hierin houden we het bewijs bij
+    
+    # STAP 1: Kernwoorden identificeren
+    log_steps.append(f"**Stap 1 (Input):** Zoeken naar kernwoorden: `{keywords}` in jaren `{years}`")
+    
+    if not keywords:
+        return "Ik kan geen kernwoorden uit je vraag halen om op te zoeken.", log_steps
 
-    # 1. Jaar Filter
+    found_codes = set()
+
+    # Loop door elk zoekwoord
+    for word in keywords:
+        word = word.lower()
+        match_found_for_word = False
+        
+        # STAP 2: Zoek in Synoniemenlijst
+        if data["syn"] is not None:
+            # Zoek exacte of deel-match in de kolom Synoniem
+            matches = data["syn"][data["syn"]['Synoniem'].str.contains(word, na=False)]
+            
+            if not matches.empty:
+                # STAP 3: Pak de bijbehorende Code (Finny_GLCode)
+                codes = matches['Finny_GLCode'].unique().tolist()
+                # Pak ook de omschrijving erbij voor de log
+                desc = matches['Finny_GLDescription'].unique().tolist()
+                
+                found_codes.update(codes)
+                log_steps.append(f"**Stap 2 & 3 (Synoniem):** Woord '{word}' gevonden in synoniemenlijst. -> Koppeling met categorie '{desc}' -> Code(s): `{codes}`")
+                match_found_for_word = True
+        
+        # Als niet gevonden in synoniemen, probeer RGS Omschrijving (Fallback binnen stap 2/3)
+        if not match_found_for_word and data["rgs"] is not None:
+            matches = data["rgs"][data["rgs"]['RGS_Omschrijving_Lower'].str.contains(word, na=False)]
+            if not matches.empty:
+                codes = matches['Finny_GLCode'].unique().tolist()
+                found_codes.update(codes)
+                log_steps.append(f"**Stap 2 & 3 (RGS):** Woord '{word}' gevonden in RGS Omschrijving. -> Code(s): `{codes}`")
+                match_found_for_word = True
+        
+        if not match_found_for_word:
+            log_steps.append(f"❌ **Stap 2 & 3:** Woord '{word}' komt niet voor in Synoniemenlijst én niet in RGS. Ik stop met zoeken voor dit woord.")
+
+    if not found_codes:
+        return "Geen enkele GL-code gevonden op basis van je zoekwoorden. Ik kan stap 4 (filteren) niet uitvoeren.", log_steps
+
+    # STAP 4: Filter Transacties op Code
+    df = data["trans"].copy()
+    
+    # Filter op Jaar (indien van toepassing)
     if years and 'Year_Clean' in df.columns:
         years_str = [str(y) for y in years]
         df = df[df['Year_Clean'].isin(years_str)]
-        debug_info.append(f"📅 Jaren: {years_str}")
-
-    if not keywords:
-        return "Geen zoektermen.", debug_info
-
-    # 2. Codes Zoeken (De Slimme Stap)
-    target_codes = set()
-    for k in keywords:
-        word = k.lower()
-        # Synoniemen
-        if data["syn"] is not None:
-            matches = data["syn"][data["syn"]['Synoniem'].str.contains(word, na=False)]
-            if not matches.empty:
-                found = matches['Finny_GLCode'].tolist()
-                target_codes.update(found)
-                debug_info.append(f"✅ Synoniem '{word}' -> {found}")
-        # RGS
-        if data["rgs"] is not None:
-            matches = data["rgs"][data["rgs"]['SearchBlob'].str.contains(word, na=False)]
-            if not matches.empty:
-                found = matches['Finny_GLCode'].tolist()
-                target_codes.update(found)
-                debug_info.append(f"✅ RGS '{word}' -> {found}")
-
-    # 3. Filteren (Code OF Tekst)
-    # We maken een masker voor Code match
-    mask_code = pd.Series([False] * len(df), index=df.index)
-    if target_codes:
-        mask_code = df['Finny_GLCode'].isin(list(target_codes))
-
-    # We maken een masker voor Tekst match (in de UniversalSearch kolom)
-    pattern = '|'.join([re.escape(k.lower()) for k in keywords])
-    mask_text = df['UniversalSearch'].str.contains(pattern, na=False)
-
-    # Combineer: Als één van beide waar is, willen we de regel hebben
-    df_final = df[mask_code | mask_text]
-
-    # 4. Resultaat (GEEN TOP 5 MEER!)
+    
+    # Filter op de gevonden Codes (DE HARDE FILTER)
+    mask = df['Finny_GLCode'].isin(list(found_codes))
+    df_final = df[mask]
+    
     count = len(df_final)
-    total = df_final['AmountDC_num'].sum()
-    
+    log_steps.append(f"**Stap 4 (Transacties):** Filteren op codes `{list(found_codes)}` in jaren `{years}`. -> Resultaat: {count} transacties gevonden.")
+
+    # STAP 5: Rekenen
     if count == 0:
-        return f"Geen data gevonden voor '{keywords}' in {years}.", debug_info
+        return "Wel codes gevonden, maar geen boekingen in dit jaar op deze codes.", log_steps
+        
+    total = df_final['AmountDC_num'].sum()
+    log_steps.append(f"**Stap 5 (Rekenen):** Subtotaal berekend: € {total:,.2f}")
+
+    # Resultaat opmaken
+    res = f"**Totaal:** € {total:,.2f}\n\n"
     
-    # Maak de tekst
-    res = f"Gevonden: {count} transacties.\nTotaal: € {total:,.2f}\n"
-    
-    # Toon kolommen die nuttig zijn voor de gebruiker
-    # We checken welke kolommen er zijn
-    cols = ['EntryDate', 'Description', 'AccountName', 'Finny_GLDescription', 'AmountDC_num']
+    cols = ['EntryDate', 'Description', 'Finny_GLCode', 'AmountDC_num']
     valid_cols = [c for c in cols if c in df_final.columns]
     
-    # Als het < 100 is, toon alles (of de eerste 100). Geen vage Top 5 meer.
-    limit = 100
-    res += f"\nLijst (max {limit}):\n{df_final[valid_cols].head(limit).to_string(index=False)}"
+    if count < 100:
+        res += df_final[valid_cols].to_string(index=False)
+    else:
+        res += f"(Lijst te lang: {count} regels. Hier is de top 10)\n"
+        res += df_final[valid_cols].head(10).to_string(index=False)
             
-    return res, debug_info
+    return res, log_steps
 
 # 4. UI
 if check_password():
@@ -197,11 +208,15 @@ if check_password():
     data = load_data()
 
     with st.sidebar:
-        st.title("Finny")
+        if os.path.exists("finny_logo.png"):
+            st.image("finny_logo.png", width=150)
+        st.title("🦁 Finny")
         if data["trans"] is not None: st.success(f"Transacties: {len(data['trans'])}")
+        if data["syn"] is not None: st.success(f"Synoniemen: {len(data['syn'])}")
+        if data["rgs"] is not None: st.success(f"RGS: {len(data['rgs'])}")
         if st.button("Reset"): st.rerun()
 
-    st.title("Finny Demo")
+    st.title("Finny Demo - IJzeren Logica")
     
     if "messages" not in st.session_state: st.session_state.messages = []
     for msg in st.session_state.messages: st.chat_message(msg["role"]).write(msg["content"])
@@ -211,7 +226,7 @@ if check_password():
         st.chat_message("user").write(prompt)
         
         with st.chat_message("assistant"):
-            with st.spinner("..."):
+            with st.spinner("Stappenplan uitvoeren..."):
                 # 1. Router
                 intent = get_intent(client, prompt)
                 
@@ -219,31 +234,33 @@ if check_password():
                 if intent['source'] == "PDF":
                     context = data["pdf_text"]
                     st.caption("Bron: PDF")
+                    # PDF Logic (Simpel)
+                    sys_msg = "Je bent Finny. Geef antwoord op basis van de PDF context."
+                    res = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role":"system", "content": sys_msg + f"\nCONTEXT:\n{context}"},
+                            {"role":"user", "content": prompt}
+                        ]
+                    )
+                    reply = res.choices[0].message.content
+                    st.write(reply)
+                    st.session_state.messages.append({"role": "assistant", "content": reply})
+
                 else:
-                    # CSV Zoektocht
-                    res_text, debug_log = query_csv_universal(data, intent)
-                    context = res_text
+                    # CSV Logic (De IJzeren Keten)
+                    res_text, log = execute_iron_logic(data, intent)
                     
-                    # Debug paneel (Nu zie je precies waarom hij iets vindt)
-                    with st.expander("🔍 Zoekdetails"):
-                        st.write(f"**Zoektermen:** {intent['keywords']} | **Jaren:** {intent['years']}")
-                        for step in debug_log: st.write(step)
-                
-                # 2. Antwoord
-                sys_msg = """
-                Je bent Finny. 
-                Gebruik de CONTEXT data voor je antwoord.
-                - Als er een lijst met transacties staat, gebruik die details.
-                - Reken niet zelf als het totaal er al staat.
-                - Geef een duidelijk overzicht.
-                """
-                res = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role":"system", "content": sys_msg + f"\nCONTEXT:\n{context}"},
-                        {"role":"user", "content": prompt}
-                    ]
-                )
-                reply = res.choices[0].message.content
-                st.write(reply)
-                st.session_state.messages.append({"role": "assistant", "content": reply})
+                    # Toon EERST de logica (zoals gevraagd)
+                    st.markdown("### ⚙️ Finny's Logica")
+                    for step in log:
+                        st.write(step)
+                    st.markdown("---")
+                    
+                    # Toon dan het resultaat
+                    st.markdown("### 📊 Resultaat")
+                    st.text(res_text)
+                    
+                    # Opslaan voor chat history
+                    final_msg = "Zie hierboven de berekening en details."
+                    st.session_state.messages.append({"role": "assistant", "content": final_msg})
