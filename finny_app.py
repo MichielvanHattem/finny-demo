@@ -1,372 +1,230 @@
 import streamlit as st
 import pandas as pd
-import re
 import os
-import glob
+import json
+import re
+from PyPDF2 import PdfReader
+from openai import OpenAI
+from dotenv import load_dotenv
 
-# Probeer PyPDF2 te gebruiken voor PDF-lezing, maar laat de app ook draaien zonder
-try:
-    from PyPDF2 import PdfReader  # type: ignore
-except ImportError:
-    PdfReader = None  # type: ignore
+# 1. CONFIGURATIE
+st.set_page_config(page_title="Finny", layout="wide")
+load_dotenv()
 
-# ------------------------------------------------------------------
-# 1. CONFIGURATIE & SETUP
-# ------------------------------------------------------------------
-st.set_page_config(page_title="Finny AI", page_icon="📊", layout="wide")
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.text_input("Wachtwoord", type="password", key="pw", on_change=lambda: st.session_state.update({"password_correct": st.session_state.pw == "demo2025"}))
+        return False
+    return st.session_state["password_correct"]
 
-# Forceer dat kolommen die codes bevatten als tekst worden gelezen
-DTYPE_SETTINGS = {
-    "Finny_GLCode": str,
-    "RGS_Referentiecode": str,
-    "AccountCode_norm": str,
-}
-
-# ------------------------------------------------------------------
-# 1A. EENVOUDIGE WACHTWOORDCHECK
-# ------------------------------------------------------------------
-PASSWORD = "demo2025"
-
-
-def _password_entered():
-    """Callback voor Streamlit: checkt wachtwoord."""
-    if st.session_state.get("password", "") == PASSWORD:
-        st.session_state["password_correct"] = True
-        # Wachtwoord niet in session_state bewaren
-        st.session_state.pop("password", None)
-    else:
-        st.session_state["password_correct"] = False
-
-
-def check_password() -> bool:
-    """Toont wachtwoordprompt en geeft True terug als het wachtwoord klopt."""
-    if st.session_state.get("password_correct"):
-        return True
-
-    st.sidebar.header("🔐 Toegang")
-    st.sidebar.text_input(
-        "Wachtwoord",
-        type="password",
-        on_change=_password_entered,
-        key="password",
-        help="Voer het Finny demo-wachtwoord in.",
-    )
-
-    if st.session_state.get("password_correct") is False:
-        st.sidebar.error("Onjuist wachtwoord. Probeer het opnieuw.")
-
-    return False
-
-
-# ------------------------------------------------------------------
-# 2. DATA LADEN (CSV's)
-# ------------------------------------------------------------------
+# 2. DATA LADEN (VERIFIEERDE METHODE)
 @st.cache_data
 def load_data():
-    try:
-        # Laad Transacties
-        df_trans = pd.read_csv(
-            "Finny_Transactions.csv",
-            sep=";",
-            dtype=DTYPE_SETTINGS,
-            encoding="latin-1",   # voorkom utf-8 decode errors
-        )
-
-        # Fix: zet komma-getallen om naar punt-getallen (floats)
-        if "AmountDC_num" in df_trans.columns and df_trans["AmountDC_num"].dtype == object:
-            df_trans["AmountDC_num"] = pd.to_numeric(
-                df_trans["AmountDC_num"].astype(str).str.replace(",", "."),
-                errors="coerce",
-            )
-
-        # Laad Synoniemen & RGS
-        df_syn = pd.read_csv(
-            "Finny_Synonyms.csv",
-            sep=";",
-            dtype=DTYPE_SETTINGS,
-            encoding="latin-1",
-        )
-        df_syn["Synoniem_lower"] = df_syn["Synoniem"].astype(str).str.lower()
-
-        df_rgs = pd.read_csv(
-            "Finny_RGS.csv",
-            sep=";",
-            dtype=DTYPE_SETTINGS,
-            encoding="latin-1",
-        )
-
-        return df_trans, df_syn, df_rgs
-    except Exception as e:
-        st.error(f"Fout bij laden CSV data: {e}")
-        return None, None, None
-
-
-# ------------------------------------------------------------------
-# 3. PDF LOGICA (JAARREKENING CHECK, MET PyPDF2)
-# ------------------------------------------------------------------
-def search_pdfs(query: str):
-    """Zoekt simpel naar trefwoorden in PDF-bestanden (jaarrekeningen).
-    Als PyPDF2 niet beschikbaar is of er zijn geen PDF's, geeft None terug.
-    """
-    if PdfReader is None:
-        return None
-
-    pdf_files = glob.glob("*.pdf")
-    if not pdf_files:
-        return None
-
-    query_words = query.lower().split()
-    stop_words = ["de", "het", "een", "in", "van", "wat", "zijn", "kosten", "hoeveel", "finny"]
-    search_terms = [w for w in query_words if w not in stop_words and len(w) > 3]
-
-    if not search_terms:
-        return None
-
-    results = []
-
-    for pdf_file in pdf_files:
+    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": ""}
+    
+    # A. Transacties
+    if os.path.exists("Finny_Transactions.csv"):
         try:
-            with open(pdf_file, "rb") as f:
-                reader = PdfReader(f)
-                num_pages = len(reader.pages)
-                for page_num in range(num_pages):
-                    try:
-                        page = reader.pages[page_num]
-                        text = page.extract_text() or ""
-                    except Exception:
-                        continue
-
-                    text_lower = text.lower()
-                    score = sum(1 for term in search_terms if term in text_lower)
-
-                    if score > 0:
-                        # Maak een leesbare snippet rondom de eerste match
-                        snippet = "..."
-                        for term in search_terms:
-                            idx = text_lower.find(term)
-                            if idx != -1:
-                                start = max(0, idx - 50)
-                                end = min(len(text), idx + 150)
-                                snippet = text[start:end].replace("\n", " ")
-                                break
-
-                        results.append(
-                            {
-                                "file": os.path.basename(pdf_file),
-                                "page": page_num + 1,
-                                "snippet": snippet,
-                                "score": score,
-                            }
-                        )
-        except Exception:
-            continue
-
-    if not results:
-        return None
-
-    results.sort(key=lambda x: x["score"], reverse=True)
-    return results[:3]
-
-
-# ------------------------------------------------------------------
-# 4. CSV LOGICA (HET 3-STAPPEN PLAN)
-# ------------------------------------------------------------------
-def extract_years(question: str):
-    """Haalt jaartallen uit de vraag."""
-    years = re.findall(r"\b(20\d{2})\b", question)
-    return [int(y) for y in years]
-
-
-def find_gl_codes(question: str, df_syn: pd.DataFrame, df_rgs: pd.DataFrame):
-    """Vertaalt vraag naar GL-codes via Synoniemen of RGS."""
-    question_lower = question.lower()
-    found_codes = set()
-    debug_matches = []
-
-    # 1A. Check Synoniemenlijst (prioriteit)
-    for _, row in df_syn.iterrows():
-        syn = row["Synoniem_lower"]
-        if syn and syn in question_lower:
-            found_codes.add(row["Finny_GLCode"])
-            debug_matches.append(f"Synoniem '{row['Synoniem']}' -> GL {row['Finny_GLCode']}")
-
-    # 1B. Back-up: zoek in RGS-omschrijvingen
-    if not found_codes:
-        for _, row in df_rgs.iterrows():
-            omschrijving = str(row.get("RGS_Omschrijving", "")).lower()
-            if omschrijving and omschrijving in question_lower:
-                found_codes.add(row["Finny_GLCode"])
-                debug_matches.append(
-                    f"RGS match '{row.get('RGS_Omschrijving', '')}' -> GL {row['Finny_GLCode']}"
+            # Lees CSV met puntkomma
+            df = pd.read_csv("Finny_Transactions.csv", sep=";", dtype=str)
+            
+            # Schoonmaak 1: Bedragen (1.000,00 -> 1000.00)
+            if 'AmountDC_num' in df.columns:
+                df['AmountDC_num'] = (
+                    df['AmountDC_num']
+                    .astype(str)
+                    .str.replace(',', '.')
+                    .replace('nan', '0')
                 )
+                df['AmountDC_num'] = pd.to_numeric(df['AmountDC_num'], errors='coerce').fillna(0.0)
+            
+            # Schoonmaak 2: Codes (2600.0 -> 2600)
+            if 'Finny_GLCode' in df.columns:
+                df['Finny_GLCode'] = df['Finny_GLCode'].astype(str).str.split('.').str[0].str.strip()
+                
+            data["trans"] = df
+        except Exception as e:
+            st.error(f"Fout Transacties: {e}")
 
-    return list(found_codes), debug_matches
+    # B. Synoniemen
+    if os.path.exists("Finny_Synonyms.csv"):
+        try:
+            df = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=str)
+            df['Synoniem'] = df['Synoniem'].str.lower().str.strip()
+            if 'Finny_GLCode' in df.columns:
+                df['Finny_GLCode'] = df['Finny_GLCode'].astype(str).str.split('.').str[0].str.strip()
+            data["syn"] = df
+        except: pass
 
+    # C. RGS
+    if os.path.exists("Finny_RGS.csv"):
+        try:
+            df = pd.read_csv("Finny_RGS.csv", sep=";", dtype=str)
+            if 'Finny_GLCode' in df.columns:
+                df['Finny_GLCode'] = df['Finny_GLCode'].astype(str).str.split('.').str[0].str.strip()
+            data["rgs"] = df
+        except: pass
 
-def get_financial_answer(question: str, df_trans: pd.DataFrame, gl_codes):
-    """Filtert transacties en berekent totalen."""
-    # Stap 2: Filter op Finny_GLCode
-    filtered_df = df_trans[df_trans["Finny_GLCode"].isin(gl_codes)].copy()
+    # D. PDF
+    pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
+    for pdf in pdf_files:
+        try:
+            reader = PdfReader(pdf)
+            text = ""
+            for page in reader.pages[:15]: text += page.extract_text()
+            data["pdf_text"] += f"\n--- BRON: {pdf} ---\n{text[:8000]}"
+        except: pass
+        
+    return data
 
-    # Stap 2B: Filter op jaar (indien in vraag)
-    years = extract_years(question)
-    if years and "Finny_Year" in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df["Finny_Year"].isin(years)]
-        period_text = ", ".join(map(str, years))
-    else:
-        period_text = "totaal (alle jaren)"
+# 3. LOGICA (STAPPENPLAN)
 
-    # Stap 3: Sommeer
-    if "AmountDC_num" in filtered_df.columns:
-        total_amount = filtered_df["AmountDC_num"].sum()
-    else:
-        total_amount = 0.0
+def get_intent(client, question):
+    """Bepaalt of we naar PDF of CSV moeten."""
+    system_prompt = """
+    Je bent de router.
+    1. 'PDF' -> Vragen over jaarrekening, balans, winst, strategie.
+    2. 'CSV' -> Vragen over specifieke kosten, leveranciers, bedragen, details.
+    
+    Output JSON: {"source": "CSV"|"PDF", "years": [2023], "keywords": ["zoekterm"]}
+    """
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role":"system", "content": system_prompt}, {"role":"user", "content": question}],
+            response_format={"type": "json_object"},
+            temperature=0
+        )
+        return json.loads(res.choices[0].message.content)
+    except:
+        return {"source": "PDF", "keywords": [], "years": []}
 
-    # Groepeer per jaar voor detail
-    if not filtered_df.empty and "Finny_Year" in filtered_df.columns:
-        per_year = filtered_df.groupby("Finny_Year")["AmountDC_num"].sum().to_dict()
-    else:
-        per_year = {}
-
-    return total_amount, per_year, period_text, filtered_df
-
-
-# ------------------------------------------------------------------
-# 5. DE INTERFACE
-# ------------------------------------------------------------------
-
-# Eerst wachtwoord checken
-if not check_password():
-    st.stop()
-
-# Data pas laden na succesvolle login
-df_trans, df_syn, df_rgs = load_data()
-
-col1, col2 = st.columns([1, 4])
-
-with col1:
-    # Gebruik expliciet het Finny-logo als dat bestaat
-    if os.path.exists("finny_logo.png"):
-        st.image("finny_logo.png", width=120)
-    else:
-        logo_files = glob.glob("*.jpg") + glob.glob("*.png")
-        if logo_files:
-            st.image(logo_files[0], width=120)
-        else:
-            st.write("Finny")
-
-with col2:
-    st.title("Finny")
-    st.markdown("**Financial Assistant v11** - *Powered by PDF & CSV*")
-
-# Chatgeschiedenis in session_state
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Toon historie
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-prompt = st.chat_input(
-    "Vraag Finny (bijv. 'Wat zijn de telefoonkosten?' of 'Wat zegt het jaarverslag?')..."
-)
-
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
-
-    full_response_parts = []
-
-    # 1. SCAN PDF (Documenten)
-    pdf_results = search_pdfs(prompt)
-    if pdf_results:
-        pdf_lines = ["**📄 Gevonden in documenten:**"]
-        for res in pdf_results:
-            pdf_lines.append(
-                f"- *{res['file']} (p.{res['page']})*: \"...{res['snippet']}...\""
-            )
-        full_response_parts.append("\n".join(pdf_lines))
-        full_response_parts.append("\n---\n")
-
-    # 2. SCAN CSV (Harde Cijfers)
-    gl_codes = []
+def query_csv_exact(data, intent):
+    """
+    Voert de zoektocht uit op basis van jouw stappenplan.
+    """
+    if data["trans"] is None: return "Geen transacties."
+    
+    df = data["trans"].copy()
+    keywords = intent.get('keywords', [])
+    years = intent.get('years', [])
     debug_info = []
 
-    # Voor winst/resultaat-vragen is de CSV-demo nog niet betrouwbaar genoeg.
-    # Dan gebruiken we alleen de PDF-resultaten en zeggen we dat expliciet.
-    lower_q = prompt.lower()
-    is_profit_question = any(w in lower_q for w in ["winst", "resultaat", "profit"])
+    # 1. Filter op Jaar (Optioneel)
+    if years and 'Finny_Year' in df.columns:
+        df['Year_Clean'] = df['Finny_Year'].astype(str).str.split('.').str[0]
+        years_str = [str(y) for y in years]
+        df_year = df[df['Year_Clean'].isin(years_str)]
+        if not df_year.empty:
+            df = df_year
+            debug_info.append(f"Gefilterd op jaren: {years_str}")
 
-    if not is_profit_question:
-        if df_trans is not None and df_syn is not None and df_rgs is not None:
-            gl_codes, debug_info = find_gl_codes(prompt, df_syn, df_rgs)
+    if not keywords:
+        return "Geen zoektermen.", []
 
-            if gl_codes:
-                total, per_year, period_text, detail_df = get_financial_answer(
-                    prompt, df_trans, gl_codes
-                )
+    # 2. Verzamel GL Codes (Uit Synoniemen & RGS)
+    target_codes = set()
+    
+    for k in keywords:
+        word = k.lower()
+        # Check Synoniemen
+        if data["syn"] is not None:
+            matches = data["syn"][data["syn"]['Synoniem'].str.contains(word, na=False)]
+            if not matches.empty:
+                codes = matches['Finny_GLCode'].tolist()
+                target_codes.update(codes)
+                debug_info.append(f"Synoniem '{word}' -> Codes: {codes}")
 
-                if not detail_df.empty and "Finny_GLDescription" in detail_df.columns:
-                    rekening_naam = detail_df.iloc[0]["Finny_GLDescription"]
-                else:
-                    rekening_naam = "Geselecteerde post"
+        # Check RGS
+        if data["rgs"] is not None:
+            matches = data["rgs"][data["rgs"]['RGS_Omschrijving'].str.lower().str.contains(word, na=False)]
+            if not matches.empty:
+                codes = matches['Finny_GLCode'].tolist()
+                target_codes.update(codes)
+                debug_info.append(f"RGS '{word}' -> Codes: {codes}")
 
-                csv_text_lines = ["**📊 Boekhouding (Transacties):**"]
-                total_fmt = (
-                    f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                )
-
-                csv_text_lines.append(
-                    f"Op **{rekening_naam}** zie ik in {period_text} een totaal van **{total_fmt}**."
-                )
-
-                if per_year and (len(per_year) > 1 or "per jaar" in lower_q):
-                    csv_text_lines.append("\n**Verdeling per jaar:**")
-                    for year, amount in per_year.items():
-                        fmt = (
-                            f"€ {amount:,.2f}"
-                            .replace(",", "X")
-                            .replace(".", ",")
-                            .replace("X", ".")
-                        )
-                        csv_text_lines.append(f"- {year}: {fmt}")
-
-                full_response_parts.append("\n".join(csv_text_lines))
-
-            elif not pdf_results:
-                full_response_parts.append(
-                    "😕 Ik kan het antwoord niet vinden in de PDF's en herken ook geen categorie voor de boekhouding. Probeer een andere term."
-                )
-
-            if not gl_codes and pdf_results:
-                full_response_parts.append(
-                    "\n*(Ik heb geen specifieke boekhoudtransacties gevonden voor deze vraag, dus ik baseer me op de tekst hierboven).*"
-                )
-        else:
-            if not pdf_results:
-                full_response_parts.append("⚠️ CSV data kon niet geladen worden.")
+    # 3. Filteren (Code OF Tekst)
+    if target_codes:
+        # Filter op gevonden codes
+        mask = df['Finny_GLCode'].isin(list(target_codes))
+        df_final = df[mask]
     else:
-        # Bewust geen CSV-antwoord voor winst/resultaat in deze demo
-        if pdf_results:
-            full_response_parts.append(
-                "\n*(Deze demo-versie kan je winst of resultaat nog niet automatisch uitrekenen uit de boekhouding. "
-                "Ik heb hierboven wel de relevante passages uit de jaarrekening laten zien.)*"
-            )
-        else:
-            full_response_parts.append(
-                "Deze demo-versie kan winst/resultaat nog niet automatisch uitrekenen uit de boekhouding."
-            )
+        # Geen codes? Filter op tekst in Omschrijving
+        pattern = '|'.join([re.escape(k) for k in keywords])
+        mask = df['Description'].astype(str).str.contains(pattern, case=False, na=False)
+        df_final = df[mask]
+        debug_info.append(f"Geen codes, gezocht op tekst '{pattern}'")
 
-    full_response = "\n".join(full_response_parts).strip()
-    if not full_response:
-        full_response = "Ik heb geen relevante gegevens kunnen vinden voor deze vraag."
+    # 4. Resultaat
+    total = df_final['AmountDC_num'].sum()
+    count = len(df_final)
+    
+    res = f"Aantal transacties: {count}\nTotaal: € {total:,.2f}\n"
+    
+    cols = ['EntryDate', 'Description', 'AmountDC_num', 'Finny_GLCode']
+    valid_cols = [c for c in cols if c in df_final.columns]
+    
+    if count < 50:
+        res += f"\n{df_final[valid_cols].to_string(index=False)}"
+    else:
+        try:
+            top = df_final.groupby('Description')['AmountDC_num'].sum().sort_values().head(5)
+            res += f"\nTop 5 Kostenposten:\n{top.to_string()}"
+        except: pass
+            
+    return res, debug_info
 
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
-    st.chat_message("assistant").write(full_response)
+# 4. UI
+if check_password():
+    api_key = os.getenv("OPENAI_API_KEY") 
+    if not api_key and "OPENAI_API_KEY" in st.secrets:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    
+    if not api_key:
+        st.error("Geen API Key.")
+        st.stop()
+        
+    client = OpenAI(api_key=api_key)
+    data = load_data()
 
-    with st.expander("🔍 Finny's Brein"):
-        if pdf_results:
-            st.write("Gevonden in PDF:", pdf_results)
-        if df_trans is not None and gl_codes:
-            st.write(f"Gekoppelde GL codes: {gl_codes}")
-            st.write("Logica:", debug_info)
+    with st.sidebar:
+        st.title("Finny")
+        if data["trans"] is not None: st.success(f"Transacties: {len(data['trans'])}")
+        if st.button("Reset"): st.rerun()
+
+    st.title("Finny Demo")
+    
+    if "messages" not in st.session_state: st.session_state.messages = []
+    for msg in st.session_state.messages: st.chat_message(msg["role"]).write(msg["content"])
+            
+    if prompt := st.chat_input("Vraag Finny..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.chat_message("user").write(prompt)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("..."):
+                intent = get_intent(client, prompt)
+                
+                context = ""
+                if intent['source'] == "PDF":
+                    context = data["pdf_text"]
+                    st.caption(f"Bron: PDF | Zoekt: {intent['keywords']}")
+                else:
+                    res_text, debug_log = query_csv_exact(data, intent)
+                    context = res_text
+                    # Toon hoe we gezocht hebben (voor controle)
+                    with st.expander("Details zoekopdracht"):
+                        st.write(f"**Strategie:** {intent['source']} | **Jaren:** {intent['years']}")
+                        for step in debug_log: st.write(step)
+                
+                sys_msg = "Je bent Finny. Gebruik de context. Reken niet zelf, totalen zijn al berekend."
+                res = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role":"system", "content": sys_msg + f"\nCONTEXT:\n{context}"},
+                        {"role":"user", "content": prompt}
+                    ]
+                )
+                reply = res.choices[0].message.content
+                st.write(reply)
+                st.session_state.messages.append({"role": "assistant", "content": reply})
