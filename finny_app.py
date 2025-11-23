@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import re
+import os
+import glob
+import pdfplumber
 
 # ------------------------------------------------------------------
 # 1. CONFIGURATIE & SETUP
@@ -15,86 +18,127 @@ DTYPE_SETTINGS = {
 }
 
 # ------------------------------------------------------------------
-# 2. DATA LADEN (De 3 nieuwe bronnen)
+# 2. DATA LADEN (CSV's)
 # ------------------------------------------------------------------
 @st.cache_data
 def load_data():
     try:
         # Laad Transacties
         df_trans = pd.read_csv('Finny_Transactions.csv', sep=';', dtype=DTYPE_SETTINGS)
-        # Zorg dat getallen floats zijn (punt als decimaal)
+        # Fix: zet komma-getallen om naar punt-getallen (floats)
         if df_trans['AmountDC_num'].dtype == object:
              df_trans['AmountDC_num'] = pd.to_numeric(df_trans['AmountDC_num'].astype(str).str.replace(',', '.'), errors='coerce')
         
-        # Laad Synoniemen
+        # Laad Synoniemen & RGS
         df_syn = pd.read_csv('Finny_Synonyms.csv', sep=';', dtype=DTYPE_SETTINGS)
-        # Zet alles naar lowercase voor slim zoeken
         df_syn['Synoniem_lower'] = df_syn['Synoniem'].astype(str).str.lower()
-
-        # Laad RGS (voor context/uitleg)
+        
         df_rgs = pd.read_csv('Finny_RGS.csv', sep=';', dtype=DTYPE_SETTINGS)
 
         return df_trans, df_syn, df_rgs
     except Exception as e:
-        st.error(f"Fout bij laden data: {e}")
+        st.error(f"Fout bij laden CSV data: {e}")
         return None, None, None
 
 df_trans, df_syn, df_rgs = load_data()
 
 # ------------------------------------------------------------------
-# 3. LOGICA: HET 3-STAPPEN PLAN
+# 3. PDF LOGICA (JAARREKENING CHECK)
 # ------------------------------------------------------------------
+def search_pdfs(query):
+    """Zoekt simpel naar trefwoorden in PDF bestanden (jaarrekeningen)."""
+    results = []
+    # Zoek alle PDF's in de map
+    pdf_files = glob.glob("*.pdf") 
+    
+    if not pdf_files:
+        return None
 
+    query_words = query.lower().split()
+    stop_words = ['de', 'het', 'een', 'in', 'van', 'wat', 'zijn', 'kosten', 'hoeveel', 'finny']
+    search_terms = [w for w in query_words if w not in stop_words and len(w) > 3]
+
+    if not search_terms:
+        return None
+
+    for pdf_file in pdf_files:
+        try:
+            with pdfplumber.open(pdf_file) as pdf:
+                for page_num, page in enumerate(pdf.pages):
+                    text = page.extract_text()
+                    if text:
+                        text_lower = text.lower()
+                        score = sum(1 for term in search_terms if term in text_lower)
+                        if score > 0:
+                            # Maak een leesbare snippet
+                            snippet = "..."
+                            for term in search_terms:
+                                idx = text_lower.find(term)
+                                if idx != -1:
+                                    start = max(0, idx - 50)
+                                    end = min(len(text), idx + 150)
+                                    snippet = text[start:end].replace('\n', ' ')
+                                    break 
+                            
+                            results.append({
+                                'file': os.path.basename(pdf_file),
+                                'page': page_num + 1,
+                                'snippet': snippet,
+                                'score': score
+                            })
+        except Exception:
+            continue # Sla bestand over als het niet leesbaar is
+
+    results.sort(key=lambda x: x['score'], reverse=True)
+    return results[:3]
+
+# ------------------------------------------------------------------
+# 4. CSV LOGICA (HET 3-STAPPEN PLAN)
+# ------------------------------------------------------------------
 def extract_years(question):
-    """Haalt jaartallen uit de vraag (bv. 2022, 2023)."""
-    # Zoek naar reeksen van 4 cijfers die beginnen met 20
+    """Haalt jaartallen uit de vraag."""
     years = re.findall(r'\b(20\d{2})\b', question)
     return [int(y) for y in years]
 
 def find_gl_codes(question, df_syn, df_rgs):
-    """Stap 1: Vertaal gebruikersvraag naar GL Codes."""
+    """Vertaalt vraag naar GL codes via Synoniemen of RGS."""
     question_lower = question.lower()
     found_codes = set()
     debug_matches = []
 
-    # 1A. Check Synoniemenlijst
+    # 1A. Check Synoniemenlijst (Prioriteit)
     for index, row in df_syn.iterrows():
-        synoniem = row['Synoniem_lower']
-        if synoniem in question_lower:
+        if row['Synoniem_lower'] in question_lower:
             found_codes.add(row['Finny_GLCode'])
             debug_matches.append(f"Synoniem '{row['Synoniem']}' -> GL {row['Finny_GLCode']}")
     
-    # 1B. Als back-up: zoek in RGS omschrijvingen
+    # 1B. Back-up: zoek in RGS omschrijvingen
     if not found_codes:
         for index, row in df_rgs.iterrows():
-            # Check OmschrijvingKort en Omschrijving
             omschrijving = str(row.get('RGS_Omschrijving', '')).lower()
             if omschrijving and omschrijving in question_lower:
                 found_codes.add(row['Finny_GLCode'])
-                debug_matches.append(f"RGS tekst match '{row['RGS_Omschrijving']}' -> GL {row['Finny_GLCode']}")
+                debug_matches.append(f"RGS match '{row['RGS_Omschrijving']}' -> GL {row['Finny_GLCode']}")
 
     return list(found_codes), debug_matches
 
 def get_financial_answer(question, df_trans, gl_codes):
-    """Stap 2 & 3: Filter transacties en bereken totaal."""
-    
-    # Stap 2: Filter op GL Code
+    """Filtert transacties en berekent totalen."""
+    # Stap 2: Filter op Code
     filtered_df = df_trans[df_trans['Finny_GLCode'].isin(gl_codes)].copy()
     
-    # Filter op Jaren (indien genoemd in vraag)
+    # Stap 2B: Filter op Jaar (indien in vraag)
     years = extract_years(question)
     if years:
-        # Als er jaartallen zijn, filteren we daarop
         filtered_df = filtered_df[filtered_df['Finny_Year'].isin(years)]
         year_str = ", ".join(map(str, years))
     else:
-        # Geen jaar? Pak standaard het laatste jaar of alles (hier kiezen we alles voor totaalbeeld)
-        year_str = "alle beschikbare jaren"
+        year_str = "totaal (alle jaren)"
 
-    # Stap 3: Aggregatie
+    # Stap 3: Sommeer
     total_amount = filtered_df['AmountDC_num'].sum()
     
-    # Groeperen per jaar voor detail
+    # Groepeer per jaar voor detail
     if not filtered_df.empty:
         per_year = filtered_df.groupby('Finny_Year')['AmountDC_num'].sum().to_dict()
     else:
@@ -103,63 +147,88 @@ def get_financial_answer(question, df_trans, gl_codes):
     return total_amount, per_year, year_str, filtered_df
 
 # ------------------------------------------------------------------
-# 4. DE INTERFACE
+# 5. DE INTERFACE
 # ------------------------------------------------------------------
 
-st.title("🦁 Finny 2.0")
-st.markdown("Ik ben direct gekoppeld aan je RGS en transacties. Vraag maar raak.")
+# LOGO: Zoek dynamisch naar de eerste jpg of png in de map
+col1, col2 = st.columns([1, 4])
+with col1:
+    # Dit pakt elk plaatje dat in je map staat, ongeacht de naam
+    logo_files = glob.glob("*.jpg") + glob.glob("*.png")
+    if logo_files:
+        st.image(logo_files[0], width=120)
+    else:
+        st.write("🦁") 
+        
+with col2:
+    st.title("Finny")
+    st.markdown("**Financial Assistant v11** - *Powered by PDF & CSV*")
 
-# Initialiseer chat geschiedenis
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Toon eerdere berichten
+# Toon geschiedenis
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 # Chat input
-if prompt := st.chat_input("Bijv: Wat waren de telefoonkosten in 2023?"):
+if prompt := st.chat_input("Vraag Finny (bijv. 'Wat zijn de telefoonkosten?' of 'Wat zegt het jaarverslag?')..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
-    # --- HET DENKPROCES ---
+    # --- ANTWOORD GENEREREN ---
+    full_response = ""
+    
+    # 1. SCAN PDF (Documenten)
+    pdf_results = search_pdfs(prompt)
+    if pdf_results:
+        pdf_text = "**📄 Gevonden in documenten:**\n"
+        for res in pdf_results:
+            pdf_text += f"- *{res['file']} (p.{res['page']})*: \"...{res['snippet']}...\"\n"
+        full_response += pdf_text + "\n---\n"
+    
+    # 2. SCAN CSV (Harde Cijfers)
     if df_trans is not None:
-        # Stap 1: Zoek GL codes
         gl_codes, debug_info = find_gl_codes(prompt, df_syn, df_rgs)
         
-        if not gl_codes:
-            response = "😕 Ik kon geen categorie vinden in je vraag. Probeer termen te gebruiken die in je synoniemenlijst staan (zoals 'autokosten', 'telefoon', etc)."
-        else:
-            # Stap 2 & 3: Rekenwerk
+        if gl_codes:
+            # We hebben een match in de boekhouding
             total, per_year, period_tekst, detail_df = get_financial_answer(prompt, df_trans, gl_codes)
             
-            # Formatteer het antwoord
-            # Haal de naam van de rekening op (pak de eerste match uit RGS of Synoniemen)
-            rekening_naam = "Geselecteerde kosten"
-            if not detail_df.empty:
-                rekening_naam = detail_df.iloc[0]['Finny_GLDescription']
+            # Pak de naam van de rekening voor de display
+            rekening_naam = detail_df.iloc[0]['Finny_GLDescription'] if not detail_df.empty else "Geselecteerde post"
             
-            match_info = f"(Gevonden via codes: {', '.join(gl_codes)})"
+            csv_text = f"**📊 Boekhouding (Transacties):**\n"
+            # Format getal (NL notatie)
+            total_fmt = f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
-            # Bouw de tekst op
-            response = f"**{rekening_naam}** in {period_tekst}:\n\n"
-            response += f"# € {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + "\n\n"
+            csv_text += f"Op **{rekening_naam}** zie ik in {period_tekst} een totaal van **{total_fmt}**.\n"
             
-            if per_year:
-                response += "**Verdeling per jaar:**\n"
+            if per_year and (len(per_year) > 1 or "per jaar" in prompt.lower()):
+                csv_text += "\n**Verdeling per jaar:**\n"
                 for year, amount in per_year.items():
-                    formatted = f"€ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    response += f"* {year}: {formatted}\n"
-
-            # Voeg debug info toe in een 'expander' (inklapbaar)
-            with st.expander("🔍 Hoe ik dit berekend heb"):
-                st.write("Gevonden matches:", debug_info)
-                st.write(f"Aantal transacties gevonden: {len(detail_df)}")
-                if len(detail_df) > 0:
-                    st.dataframe(detail_df[['EntryDate', 'Finny_GLDescription', 'AmountDC_num', 'Description']].head(5))
+                    fmt = f"€ {amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    csv_text += f"- {year}: {fmt}\n"
+            
+            full_response += csv_text
+        
+        elif not pdf_results:
+            # Geen PDF en geen CSV match
+            full_response = "😕 Ik kan het antwoord niet vinden in de PDF's en herken ook geen categorie voor de boekhouding. Probeer een andere term."
+        
+        if not gl_codes and pdf_results:
+            full_response += "\n*(Ik heb geen specifieke boekhoudtransacties gevonden voor deze vraag, dus ik baseer me op de tekst hierboven)*"
 
     else:
-        response = "⚠️ De data kon niet geladen worden. Check de CSV bestanden."
+        full_response = "⚠️ CSV data kon niet geladen worden."
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
-    st.chat_message("assistant").write(response)
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    st.chat_message("assistant").write(full_response)
+    
+    # Debug info
+    with st.expander("🔍 Finny's Brein"):
+        if pdf_results:
+            st.write("Gevonden in PDF:", pdf_results)
+        if df_trans is not None and 'gl_codes' in locals() and gl_codes:
+            st.write(f"Gekoppelde GL codes: {gl_codes}")
+            st.write("Logica:", debug_info)
