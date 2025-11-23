@@ -23,13 +23,54 @@ DTYPE_SETTINGS = {
 }
 
 # ------------------------------------------------------------------
+# 1A. EENVOUDIGE WACHTWOORDCHECK
+# ------------------------------------------------------------------
+PASSWORD = "demo2025"
+
+
+def _password_entered():
+    """Callback voor Streamlit: checkt wachtwoord."""
+    if st.session_state.get("password", "") == PASSWORD:
+        st.session_state["password_correct"] = True
+        # Wachtwoord niet in session_state bewaren
+        st.session_state.pop("password", None)
+    else:
+        st.session_state["password_correct"] = False
+
+
+def check_password() -> bool:
+    """Toont wachtwoordprompt en geeft True terug als het wachtwoord klopt."""
+    if st.session_state.get("password_correct"):
+        return True
+
+    st.sidebar.header("🔐 Toegang")
+    st.sidebar.text_input(
+        "Wachtwoord",
+        type="password",
+        on_change=_password_entered,
+        key="password",
+        help="Voer het Finny demo-wachtwoord in.",
+    )
+
+    if st.session_state.get("password_correct") is False:
+        st.sidebar.error("Onjuist wachtwoord. Probeer het opnieuw.")
+
+    return False
+
+
+# ------------------------------------------------------------------
 # 2. DATA LADEN (CSV's)
 # ------------------------------------------------------------------
 @st.cache_data
 def load_data():
     try:
         # Laad Transacties
-        df_trans = pd.read_csv("Finny_Transactions.csv", sep=";", dtype=DTYPE_SETTINGS)
+        df_trans = pd.read_csv(
+            "Finny_Transactions.csv",
+            sep=";",
+            dtype=DTYPE_SETTINGS,
+            encoding="latin-1",   # voorkom utf-8 decode errors
+        )
 
         # Fix: zet komma-getallen om naar punt-getallen (floats)
         if "AmountDC_num" in df_trans.columns and df_trans["AmountDC_num"].dtype == object:
@@ -39,18 +80,26 @@ def load_data():
             )
 
         # Laad Synoniemen & RGS
-        df_syn = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=DTYPE_SETTINGS)
+        df_syn = pd.read_csv(
+            "Finny_Synonyms.csv",
+            sep=";",
+            dtype=DTYPE_SETTINGS,
+            encoding="latin-1",
+        )
         df_syn["Synoniem_lower"] = df_syn["Synoniem"].astype(str).str.lower()
 
-        df_rgs = pd.read_csv("Finny_RGS.csv", sep=";", dtype=DTYPE_SETTINGS)
+        df_rgs = pd.read_csv(
+            "Finny_RGS.csv",
+            sep=";",
+            dtype=DTYPE_SETTINGS,
+            encoding="latin-1",
+        )
 
         return df_trans, df_syn, df_rgs
     except Exception as e:
         st.error(f"Fout bij laden CSV data: {e}")
         return None, None, None
 
-
-df_trans, df_syn, df_rgs = load_data()
 
 # ------------------------------------------------------------------
 # 3. PDF LOGICA (JAARREKENING CHECK, MET PyPDF2)
@@ -60,10 +109,8 @@ def search_pdfs(query: str):
     Als PyPDF2 niet beschikbaar is of er zijn geen PDF's, geeft None terug.
     """
     if PdfReader is None:
-        # PyPDF2 is niet geïnstalleerd; sla PDF-zoekfunctionaliteit over
         return None
 
-    # Zoek alle PDF's in de map
     pdf_files = glob.glob("*.pdf")
     if not pdf_files:
         return None
@@ -112,7 +159,6 @@ def search_pdfs(query: str):
                             }
                         )
         except Exception:
-            # Sla dit bestand over als het niet leesbaar is
             continue
 
     if not results:
@@ -188,6 +234,14 @@ def get_financial_answer(question: str, df_trans: pd.DataFrame, gl_codes):
 # ------------------------------------------------------------------
 # 5. DE INTERFACE
 # ------------------------------------------------------------------
+
+# Eerst wachtwoord checken
+if not check_password():
+    st.stop()
+
+# Data pas laden na succesvolle login
+df_trans, df_syn, df_rgs = load_data()
+
 col1, col2 = st.columns([1, 4])
 
 with col1:
@@ -195,7 +249,6 @@ with col1:
     if os.path.exists("finny_logo.png"):
         st.image("finny_logo.png", width=120)
     else:
-        # Fallback: pak eerste willekeurige afbeelding in de map
         logo_files = glob.glob("*.jpg") + glob.glob("*.png")
         if logo_files:
             st.image(logo_files[0], width=120)
@@ -257,7 +310,6 @@ if prompt:
                 rekening_naam = "Geselecteerde post"
 
             csv_text_lines = ["**📊 Boekhouding (Transacties):**"]
-            # Format getal (NL notatie)
             total_fmt = (
                 f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             )
@@ -266,7 +318,6 @@ if prompt:
                 f"Op **{rekening_naam}** zie ik in {period_text} een totaal van **{total_fmt}**."
             )
 
-            # Detail per jaar indien nuttig
             if per_year and (len(per_year) > 1 or "per jaar" in prompt.lower()):
                 csv_text_lines.append("\n**Verdeling per jaar:**")
                 for year, amount in per_year.items():
@@ -281,7 +332,6 @@ if prompt:
             full_response_parts.append("\n".join(csv_text_lines))
 
         elif not pdf_results:
-            # Geen PDF en geen CSV match
             full_response_parts.append(
                 "😕 Ik kan het antwoord niet vinden in de PDF's en herken ook geen categorie voor de boekhouding. Probeer een andere term."
             )
