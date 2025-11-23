@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import re
 from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -10,44 +11,42 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Finny", page_icon="🦁", layout="wide")
 load_dotenv()
 
-# Wachtwoord
 def check_password():
     if "password_correct" not in st.session_state:
         st.text_input("Wachtwoord", type="password", key="pw", on_change=lambda: st.session_state.update({"password_correct": st.session_state.pw == "demo2025"}))
         return False
     return st.session_state["password_correct"]
 
-# 2. DATA LADEN (PUUR LEZEN, GEEN POETSWERK)
+# 2. DATA LADEN (SCHOON & SIMPEL)
 @st.cache_data
 def load_data():
     data = {"syn": None, "trans": None, "rgs": None, "pdf_text": ""}
     
-    # A. TRANSACTIES (Vertrouwen op schone data)
-    if os.path.exists("Finny_Transactions.csv"):
-        try:
-            # We lezen met puntkomma. We gaan ervan uit dat AmountDC_num een getal is.
-            # decimal=',' zorgt dat 12,50 wordt gelezen als 12.50
-            df = pd.read_csv("Finny_Transactions.csv", sep=";", decimal=",")
-            data["trans"] = df
-        except Exception as e:
-            st.error(f"Fout transacties: {e}")
+    # A. CSV BESTANDEN (Jouw 3 schone bronnen)
+    try:
+        # Transacties
+        if os.path.exists("Finny_Transactions.csv"):
+            df = pd.read_csv("Finny_Transactions.csv", sep=";", dtype={'Finny_GLCode': str})
+            # Zorg dat bedrag een getal is (punt als decimaal)
+            if df['AmountDC_num'].dtype == object:
+                df['AmountDC_num'] = pd.to_numeric(df['AmountDC_num'].astype(str).str.replace(',', '.'), errors='coerce')
+            data["trans"] = df.fillna("") # Lege waarden opvullen voorkomt crashes
 
-    # B. SYNONIEMEN
-    if os.path.exists("Finny_Synonyms.csv"):
-        try:
-            df_syn = pd.read_csv("Finny_Synonyms.csv", sep=";")
-            # Zorg dat synoniemen lowercase zijn voor matching
-            df_syn['Synoniem'] = df_syn['Synoniem'].astype(str).str.lower()
+        # Synoniemen
+        if os.path.exists("Finny_Synonyms.csv"):
+            df_syn = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=str)
+            df_syn['Synoniem'] = df_syn['Synoniem'].str.lower().str.strip()
             data["syn"] = df_syn
-        except: pass
 
-    # C. RGS (Optioneel voor context)
-    if os.path.exists("Finny_RGS.csv"):
-        try:
-            data["rgs"] = pd.read_csv("Finny_RGS.csv", sep=";")
-        except: pass
+        # RGS
+        if os.path.exists("Finny_RGS.csv"):
+            df_rgs = pd.read_csv("Finny_RGS.csv", sep=";", dtype=str)
+            data["rgs"] = df_rgs
 
-    # D. PDF
+    except Exception as e:
+        st.error(f"Data Fout: {e}")
+
+    # B. PDF BESTANDEN
     pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
     for pdf in pdf_files:
         try:
@@ -59,14 +58,14 @@ def load_data():
         
     return data
 
-# 3. LOGICA (ROUTER & ENGINE)
+# 3. LOGICA (DE CORRECTE ZOEKSTRATEGIE)
 
 def get_intent(client, question):
-    """Bepaalt bron: PDF of CSV."""
+    """Bepaalt of we naar PDF of CSV moeten."""
     system_prompt = """
-    Je bent de router. Bepaal de bron.
-    1. 'PDF' -> Jaarrekening, balans, winst, strategie.
-    2. 'CSV' -> Kosten, bedragen, leveranciers, details.
+    Je bent de router.
+    1. 'PDF' -> Vragen over jaarrekening, balans, winst, strategie.
+    2. 'CSV' -> Vragen over specifieke kosten, leveranciers, bedragen, details.
     
     Output JSON: {"source": "CSV"|"PDF", "years": [2023], "keywords": ["zoekterm"]}
     """
@@ -81,10 +80,12 @@ def get_intent(client, question):
     except:
         return {"source": "PDF", "keywords": [], "years": []}
 
-def query_clean_data(data, intent):
+def query_csv_exact(data, intent):
     """
-    Zoekt direct in de schone data.
-    Logica: Zoekterm -> Synoniemenlijst -> GL Code -> Transacties
+    De En/En Strategie:
+    1. Zoek GL-codes via Synoniemen.
+    2. Zoek GL-codes via RGS omschrijvingen.
+    3. Filter transacties op: (GL-code match) OF (Tekst match in omschrijving).
     """
     if data["trans"] is None: return "Geen transacties."
     
@@ -92,56 +93,67 @@ def query_clean_data(data, intent):
     keywords = intent.get('keywords', [])
     years = intent.get('years', [])
     
-    # 1. Filter op Jaar (Finny_Year kolom in clean data)
+    # 1. Filter op Jaar
     if years and 'Finny_Year' in df.columns:
+        # Zorg dat jaar kolom numeric is voor matching
+        df['Finny_Year'] = pd.to_numeric(df['Finny_Year'], errors='coerce')
         df = df[df['Finny_Year'].isin(years)]
 
-    # 2. Filter op Inhoud
-    if keywords:
-        gl_codes = []
-        # A. Kijk in Synoniemen
-        if data["syn"] is not None:
-            for k in keywords:
-                # Exacte of deel-match in synoniemen
-                matches = data["syn"][data["syn"]['Synoniem'].str.contains(k.lower(), na=False)]
-                if not matches.empty:
-                    gl_codes.extend(matches['Finny_GLCode'].tolist())
-        
-        if gl_codes:
-            # B. We hebben codes gevonden -> Filter transacties op code
-            # Zorg dat types matchen (string vs int), voor zekerheid naar string converten
-            df['Finny_GLCode'] = df['Finny_GLCode'].astype(str).str.replace('.0', '')
-            gl_codes_str = [str(c).replace('.0', '') for c in gl_codes]
-            
-            df = df[df['Finny_GLCode'].isin(gl_codes_str)]
-        else:
-            # C. Geen synoniem? Dan plat zoeken in Omschrijving (Description)
-            pattern = '|'.join(keywords)
-            df = df[df['Description'].astype(str).str.contains(pattern, case=False, na=False)]
+    if not keywords:
+        return "Geen zoektermen opgegeven."
 
-    # 3. Resultaat
-    # We gebruiken AmountDC_num omdat dat de schone numerieke kolom is
-    if 'AmountDC_num' in df.columns:
-        total = df['AmountDC_num'].sum()
-    else:
-        total = 0.0 # Fallback als kolomnaam toch anders is
+    # 2. Verzamel GL Codes (Via Synoniemen & RGS)
+    target_codes = set()
+    
+    for k in keywords:
+        word = k.lower()
         
-    count = len(df)
+        # Check Synoniemen
+        if data["syn"] is not None:
+            matches = data["syn"][data["syn"]['Synoniem'].str.contains(word, na=False)]
+            target_codes.update(matches['Finny_GLCode'].tolist())
+            
+        # Check RGS (Omschrijvingen)
+        if data["rgs"] is not None:
+            matches = data["rgs"][data["rgs"]['RGS_Omschrijving'].str.lower().str.contains(word, na=False)]
+            target_codes.update(matches['Finny_GLCode'].tolist())
+
+    # 3. De Grote Filter (Code OF Tekst)
+    # We maken een masker (True/False lijst) voor de rijen die we willen
     
-    if count == 0: return f"Geen data gevonden voor {keywords}."
+    # A. Match op GL Code (als we die gevonden hebben)
+    mask_code = pd.Series([False] * len(df), index=df.index) # Start met alles False
+    if target_codes:
+        # Zorg dat types matchen (string vs string)
+        clean_targets = [str(c).split('.')[0] for c in target_codes] # '2600.0' -> '2600'
+        df['Finny_GLCode_clean'] = df['Finny_GLCode'].astype(str).str.split('.').str[0]
+        mask_code = df['Finny_GLCode_clean'].isin(clean_targets)
+
+    # B. Match op Tekst (Description)
+    pattern = '|'.join([re.escape(k) for k in keywords])
+    mask_text = df['Description'].astype(str).str.contains(pattern, case=False, na=False)
+
+    # C. Combineer: Code Match OF Tekst Match
+    df_final = df[mask_code | mask_text]
+
+    # 4. Resultaat
+    count = len(df_final)
+    if count == 0: return f"Geen data gevonden voor '{keywords}' in {years}."
     
-    res = f"Aantal transacties: {count}\nTotaal: € {total:,.2f}\n"
+    total = df_final['AmountDC_num'].sum()
     
-    # Toon details (Description en Amount)
-    cols_to_show = [c for c in ['EntryDate', 'Description', 'AmountDC_num'] if c in df.columns]
+    res = f"Zoekterm: {keywords}\nGevonden codes: {list(target_codes)[:5]}\n"
+    res += f"Aantal transacties: {count}\nTotaal: € {total:,.2f}\n"
     
-    if count < 20:
-        res += f"\nDetails:\n{df[cols_to_show].to_string(index=False)}"
+    # Toon relevante kolommen
+    cols = ['EntryDate', 'Description', 'AmountDC_num', 'Finny_GLDescription']
+    
+    if count < 30:
+        res += f"\nDetails:\n{df_final[cols].to_string(index=False)}"
     else:
-        # Top 5
-        if 'Description' in df.columns:
-            top = df.groupby('Description')['AmountDC_num'].sum().sort_values().head(5)
-            res += f"\nTop 5 Posten:\n{top.to_string()}"
+        # Top 5 als het veel is
+        top = df_final.groupby('Description')['AmountDC_num'].sum().sort_values().head(5)
+        res += f"\nTop 5 Kostenposten:\n{top.to_string()}"
             
     return res
 
@@ -159,7 +171,7 @@ if check_password():
     data = load_data()
 
     with st.sidebar:
-        # Logo
+        # Logo check
         for ext in ["jpg", "png", "jpeg"]:
             if os.path.exists(f"finny_logo.{ext}"):
                 st.image(f"finny_logo.{ext}", width=150)
@@ -180,15 +192,19 @@ if check_password():
         
         with st.chat_message("assistant"):
             with st.spinner("..."):
+                # 1. Router
                 intent = get_intent(client, prompt)
-                st.caption(f"Strategie: {intent['source']} | Zoektermen: {intent['keywords']}")
                 
+                # 2. Data
                 context = ""
                 if intent['source'] == "PDF":
+                    st.caption("Strategie: PDF (Jaarrekening)")
                     context = data["pdf_text"]
                 else:
-                    context = query_clean_data(data, intent)
+                    st.caption(f"Strategie: CSV (Transacties) | Zoekt: {intent['keywords']}")
+                    context = query_csv_exact(data, intent)
                 
+                # 3. Antwoord
                 sys_msg = "Je bent Finny. Gebruik de context. Reken niet zelf, totalen zijn al berekend."
                 res = client.chat.completions.create(
                     model="gpt-4o-mini",
