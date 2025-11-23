@@ -8,13 +8,13 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# 1. CONFIGURATIE & STATE
+# 1. CONFIGURATIE
 st.set_page_config(page_title="Finny", layout="wide")
 load_dotenv()
 
-# Initialiseer Geheugen
+# Geheugen
 if "active_years" not in st.session_state:
-    st.session_state["active_years"] = [2024] # Default
+    st.session_state["active_years"] = [2024]
 if "messages" not in st.session_state: 
     st.session_state.messages = []
 
@@ -25,9 +25,9 @@ def check_password():
     return st.session_state["password_correct"]
 
 # 2. DATA LADEN
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_data():
-    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": ""}
+    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": "", "latest_year": 2024}
     
     def clean_code(val):
         return str(val).split('.')[0].strip()
@@ -36,23 +36,23 @@ def load_data():
     if os.path.exists("Finny_Transactions.csv"):
         try:
             df = pd.read_csv("Finny_Transactions.csv", sep=";", dtype=str)
-            
-            # Bedragen naar float
             if 'AmountDC_num' in df.columns:
                 df['AmountDC_num'] = df['AmountDC_num'].str.replace(',', '.').replace('nan', '0')
                 df['AmountDC_num'] = pd.to_numeric(df['AmountDC_num'], errors='coerce').fillna(0.0)
             
-            # Codes & Jaren cleanen
             if 'Finny_GLCode' in df.columns:
                 df['Finny_GLCode'] = df['Finny_GLCode'].apply(clean_code)
+            
             if 'Finny_Year' in df.columns:
-                # Zorg dat jaren integers zijn voor filteren
                 df['Year_Clean'] = df['Finny_Year'].astype(str).str.split('.').str[0]
+                valid_years = pd.to_numeric(df['Year_Clean'], errors='coerce').dropna()
+                if not valid_years.empty:
+                    data["latest_year"] = int(valid_years.max())
 
-            # Universal Search kolom (voor Lookups)
-            search_cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
-            existing_cols = [c for c in search_cols if c in df.columns]
-            df['UniversalSearch'] = df[existing_cols].astype(str).agg(' '.join, axis=1).str.lower()
+            # Universal Search (Alles doorzoekbaar maken)
+            cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
+            existing = [c for c in cols if c in df.columns]
+            df['UniversalSearch'] = df[existing].astype(str).agg(' '.join, axis=1).str.lower()
 
             data["trans"] = df
         except Exception as e: st.error(f"Fout Transacties: {e}")
@@ -73,8 +73,8 @@ def load_data():
             df = pd.read_csv("Finny_RGS.csv", sep=";", dtype=str)
             if 'Finny_GLCode' in df.columns:
                 df['Finny_GLCode'] = df['Finny_GLCode'].apply(clean_code)
-            cols_to_join = [c for c in df.columns if 'Omschrijving' in c or 'Description' in c]
-            df['SearchBlob'] = df[cols_to_join].astype(str).agg(' '.join, axis=1).str.lower()
+            cols = [c for c in df.columns if 'Omschrijving' in c or 'Description' in c]
+            df['SearchBlob'] = df[cols].astype(str).agg(' '.join, axis=1).str.lower()
             data["rgs"] = df
         except: pass
 
@@ -90,27 +90,26 @@ def load_data():
         
     return data
 
-# 3. LOGICA: INTENT & ANALYSE
+# 3. LOGICA
 
 def get_intent(client, question):
     """
-    Bepaalt Bron, Jaren en Analyse Type.
+    Router: Bepaalt Bron (PDF/CSV) en Context (Jaren).
     """
     context_years = st.session_state["active_years"]
+    if not context_years: context_years = [2024]
     
     system_prompt = f"""
     Je bent de router van Finny.
-    CONTEXT: De gebruiker had het zojuist over de jaren: {context_years}.
+    CONTEXT: Huidige focusjaren: {context_years}.
     
-    TAAK: Analyseer de nieuwe vraag.
-    1. 'source': 'PDF' (winst/balans/omzet/solvabiliteit) of 'CSV' (kosten/details/facturen/trends).
-    2. 'analysis_type': 
-       - 'lookup' (zoek specifiek bedrag/factuur, bv: "kosten vodafone")
-       - 'trend' (zoek stijgers/dalers/grootste posten, bv: "welke kosten lopen op?", "grootste kosten", "wat zijn mijn kosten?")
-    3. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik de jaren uit CONTEXT.
-    4. 'keywords': Zoekwoorden. Bijv ["auto"]. Als er gevraagd wordt naar "mijn kosten" (totaal), laat dit leeg.
+    TAAK: Bepaal de bron.
+    1. 'PDF' -> ALLEEN voor: Totale Winst, Totale Omzet, Balanstotaal, Solvabiliteit.
+    2. 'CSV' -> ALTIJD voor: Specifieke kosten (Telefoon, Auto, Huisvesting, Kantoor), leveranciers, detailvragen.
+       (Zelfs als de gebruiker vraagt "Wat zijn de totale telefoonkosten?", is dit CSV).
     
-    Output JSON: {{"source": "CSV"|"PDF", "analysis_type": "lookup"|"trend", "years": [2022, 2023], "keywords": ["..."]}}
+    Output JSON: {{"source": "CSV"|"PDF", "years": [2022, 2023, 2024], "keywords": ["zoekterm"]}}
+    ALS GEEN JAAR GENOEMD: Gebruik de jaren uit de CONTEXT.
     """
     try:
         res = client.chat.completions.create(
@@ -121,83 +120,106 @@ def get_intent(client, question):
         )
         intent = json.loads(res.choices[0].message.content)
         
-        # Update geheugen
-        if intent.get('years') and len(intent['years']) > 0:
+        if intent.get('years'):
             st.session_state["active_years"] = intent['years']
         else:
-            intent['years'] = st.session_state["active_years"]
+            intent['years'] = context_years
             
         return intent
     except:
-        return {"source": "PDF", "analysis_type": "lookup", "keywords": [], "years": st.session_state["active_years"]}
+        return {"source": "PDF", "keywords": [], "years": context_years}
 
-def analyze_csv_costs(data, intent):
+def expand_search_terms(keywords):
     """
-    Slimme CSV Analyse voor Kosten & Trends.
-    Houdt rekening met gesloten boekjaren.
+    Slimme Synoniemen Booster.
+    Als de gebruiker 'telefoon' zegt, zoeken we ook op 'communicatie'.
     """
-    if data["trans"] is None: return "Geen transacties geladen."
+    expanded = set(keywords)
+    mapping = {
+        'telefoon': ['communicatie', 'mobiel', 'internet', 'bellen', 'kpn', 'vodafone', 't-mobile', 'ziggo'],
+        'communicatie': ['telefoon', 'internet', 'data', 'mobiel'],
+        'auto': ['vervoer', 'brandstof', 'lease', 'parkeren', 'tank', 'kilometer'],
+        'kantoor': ['huisvesting', 'huur', 'inventaris', 'bureau', 'supplies'],
+        'personeel': ['loon', 'salaris', 'sociale', 'verzekering']
+    }
+    
+    for k in keywords:
+        for key, values in mapping.items():
+            if key in k.lower():
+                expanded.update(values)
+    
+    return list(expanded)
+
+def analyze_csv_specific(data, intent):
+    """
+    Specifieke Kosten Analyse (CSV).
+    Maakt een harde tabel per jaar voor de gevraagde kostenpost.
+    """
+    if data["trans"] is None: return "Geen transacties."
     
     df = data["trans"].copy()
     years = intent.get('years', [])
-    years = sorted([str(y) for y in years]) # Jaren als strings voor matching
-    keywords = intent.get('keywords', [])
+    # Zorg dat jaren strings zijn voor matching
+    years = sorted([str(y) for y in years])
     
-    if not years:
-        return "Geen jaren geselecteerd voor analyse."
-
-    # 1. Filter op Jaren
+    raw_keywords = intent.get('keywords', [])
+    # Breid zoektermen uit (Telefoon -> Communicatie)
+    keywords = expand_search_terms(raw_keywords)
+    
+    # 1. Filter Jaren
     df = df[df['Year_Clean'].isin(years)]
-    if df.empty:
-        return f"Geen data gevonden voor jaren {years}."
+    if df.empty: return f"Geen data voor jaren {years}."
 
-    # --- STAP 2: Filteren op 'Echte' Kosten (Gesloten Boekjaar Fix) ---
-    
-    # A. Verwijder afsluitboekingen op tekst
-    # Boekingen met 'Resultaat', 'Winst', 'Balans' in de omschrijving zijn vaak technische boekingen
-    mask_closing = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting|verdeling)', case=False, na=False)
-    df = df[~mask_closing]
+    # 2. Filter op 'Echte' Kosten (Geen resultaatboekingen)
+    mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
+    df = df[~mask_tech]
 
-    # B. Filter op Kostenrekeningen (RGS Rubriek 4)
-    # Als we geen specifieke keywords hebben (bv vraag "Wat zijn mijn kosten?"), 
-    # pakken we alleen GL codes die beginnen met '4' (Kosten in RGS).
-    # Als we wel keywords hebben (bv "Auto"), vertrouwen we op de zoekterm en filteren we minder hard op rubriek.
-    if not keywords:
-        # Algemene kostenvraag -> Alleen Rubriek 4
-        df = df[df['Finny_GLCode'].str.startswith('4', na=False)]
-    else:
-        # Specifieke vraag -> Zoek op keywords in description/categorie
+    # 3. Filter op Zoektermen (Universal Search)
+    if keywords:
         pattern = '|'.join([re.escape(k.lower()) for k in keywords])
+        # We zoeken ook in de RGS-omschrijvingen via de koppeling, maar UniversalSearch bevat GLDescription al.
         mask_text = df['UniversalSearch'].str.contains(pattern, na=False)
-        df = df[mask_text]
+        
+        # Extra check: Filter ook op GL Codes die in RGS/Synoniemen matchen
+        target_codes = []
+        if data["rgs"] is not None:
+            rgs_hits = data["rgs"][data["rgs"]['SearchBlob'].str.contains(pattern, na=False)]
+            target_codes.extend(rgs_hits['Finny_GLCode'].tolist())
+            
+        if target_codes:
+            mask_code = df['Finny_GLCode'].isin(target_codes)
+            df = df[mask_text | mask_code]
+        else:
+            df = df[mask_text]
 
-    # 3. Groeperen en Analyseren
-    # We groeperen per Categorie (GL Description) en Jaar
-    pivot = df.groupby(['Finny_GLDescription', 'Year_Clean'])['AmountDC_num'].sum().unstack(fill_value=0)
-    
-    # 4. Resultaat Maken
-    if pivot.empty:
-        return "Geen kosten gevonden na filtering (afsluitboekingen zijn weggelaten)."
+    if df.empty:
+        return f"Ik zie geen transacties voor '{raw_keywords}' in {years}."
 
-    # Sorteer op het laatste jaar
-    last_year = years[-1]
-    if last_year in pivot.columns:
-        pivot = pivot.sort_values(last_year, ascending=False)
+    # 4. Groeperen per Jaar (Harde Cijfers)
+    # We sommeren alles wat we gevonden hebben per jaar
+    pivot = df.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
+    pivot.columns = ['Jaar', 'Bedrag']
+    
+    # Zorg dat alle gevraagde jaren erin staan (ook als bedrag 0 is)
+    for y in years:
+        if y not in pivot['Jaar'].values:
+            pivot = pd.concat([pivot, pd.DataFrame({'Jaar': [y], 'Bedrag': [0.0]})])
+            
+    pivot = pivot.sort_values('Jaar')
 
-    res = f"### KOSTEN ANALYSE ({', '.join(years)})\n"
-    res += "*(Afsluitboekingen en resultaatverdelingen zijn uitgezonderd)*\n\n"
+    # 5. Output Maken
+    res = f"### KOSTEN OVERZICHT: {', '.join(raw_keywords).upper()}\n\n"
     
-    # Als we meerdere jaren hebben, bereken verschil
-    if len(years) > 1:
-        first_year = years[0]
-        if first_year in pivot.columns and last_year in pivot.columns:
-            pivot['Verschil'] = pivot[last_year] - pivot[first_year]
-            # Sorteer op grootste stijgers (grootste positieve verschil)
-            pivot = pivot.sort_values('Verschil', ascending=False)
+    # Tabel genereren
+    res += "| Jaar | Totaal Bedrag |\n|---|---|\n"
+    for _, row in pivot.iterrows():
+        res += f"| {row['Jaar']} | € {row['Bedrag']:,.2f} |\n"
     
-    # Toon top 15 rijen
-    res += pivot.head(15).to_markdown(floatfmt=".2f")
-    
+    # Grootste posten tonen (Details)
+    res += "\n**Grootste boekingen/posten in deze selectie:**\n"
+    top_items = df.groupby(['Description', 'Year_Clean'])['AmountDC_num'].sum().reset_index().sort_values('AmountDC_num', ascending=False).head(5)
+    res += top_items.to_markdown(index=False, floatfmt=".2f")
+
     return res
 
 # 4. UI
@@ -214,14 +236,18 @@ if check_password():
     data = load_data()
 
     with st.sidebar:
-        # Logo
         logo_files = glob.glob("*.png") + glob.glob("*.jpg")
         if logo_files: st.image(logo_files[0], width=150)
             
         st.title("Finny")
-        st.caption(f"Geheugen: {st.session_state['active_years']}")
+        
+        if data["trans"] is not None:
+            if not st.session_state["active_years"]:
+                st.session_state["active_years"] = [str(data["latest_year"])]
+            st.caption(f"Geheugen: {st.session_state['active_years']}")
+        
         if st.button("Nieuw Gesprek"): 
-            st.session_state["active_years"] = [2024]
+            st.session_state["active_years"] = [str(data["latest_year"])]
             st.session_state.messages = []
             st.rerun()
 
@@ -236,37 +262,33 @@ if check_password():
         
         with st.chat_message("assistant"):
             with st.spinner("..."):
-                # 1. Router
                 intent = get_intent(client, prompt)
                 
                 context = ""
-                # 2. Data Ophalen
                 if intent['source'] == "PDF":
                     context = data["pdf_text"]
+                    st.caption(f"Bron: Jaarrekening | Jaren: {intent['years']}")
                 else:
-                    # CSV: Altijd via de slimme kosten-functie
-                    # Dit pakt zowel "lookups" als "trends" goed mee met de juiste filters
-                    context = analyze_csv_costs(data, intent)
-                
-                # 3. Antwoord Genereren (TOON AANPASSING)
+                    # CSV Analyse
+                    context = analyze_csv_specific(data, intent)
+                    st.caption(f"Bron: Transacties | Focus: {intent['keywords']} | Jaren: {intent['years']}")
                 
                 system_prompt_finny = """
                 Je bent Finny, een informele financiële assistent.
+                STIJL:
+                - Spreek aan met 'je/jij'.
+                - GEEN briefformaat (geen "Geachte", geen "Groet").
+                - Direct en zakelijk.
                 
-                BELANGRIJKE STIJLREGELS:
-                - Spreek de gebruiker aan met 'je' en 'jij'.
-                - GEEN briefformaat! Dus GEEN "Geachte", GEEN "Met vriendelijke groet", GEEN "Finny" aan het eind.
-                - Antwoord direct en "to the point".
-                - Wees behulpzaam maar niet overdreven beleefd.
-                
-                INHOUD:
-                - Gebruik de tabel in de context voor je antwoord.
-                - Als je een trend ziet (stijging/daling), benoem die kort.
-                - Verzin geen cijfers.
+                INSTRUCTIES:
+                - Gebruik de TABEL uit de context.
+                - Als er voor een jaar € 0.00 staat, zeg dan dat er geen kosten waren.
+                - Verzin geen bedragen.
+                - Als je een stijging/daling ziet in de tabel, benoem die.
                 """
-
-                # History opbouwen
-                messages_payload = [{"role": "system", "content": f"{system_prompt_finny}\n\nDATA CONTEXT:\n{context}"}]
+                
+                # History meesturen
+                messages_payload = [{"role": "system", "content": f"{system_prompt_finny}\n\nDATA:\n{context}"}]
                 for msg in st.session_state.messages[-5:]:
                     role = "user" if msg["role"] == "user" else "assistant"
                     messages_payload.append({"role": role, "content": msg["content"]})
