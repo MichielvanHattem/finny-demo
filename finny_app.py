@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Finny", layout="wide")
 load_dotenv()
 
-# Geheugen initialisatie (Leeg starten, wordt gevuld door data)
+# Geheugen initialiseren
 if "active_years" not in st.session_state:
-    st.session_state["active_years"] = []
+    st.session_state["active_years"] = [2024]
 if "messages" not in st.session_state: 
     st.session_state.messages = []
 
@@ -27,8 +27,7 @@ def check_password():
 # 2. DATA LADEN
 @st.cache_data(ttl=3600)
 def load_data():
-    # We slaan nu 'all_years' op in plaats van alleen 'latest_year'
-    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": "", "all_years": [2024]}
+    data = {"syn": None, "trans": None, "rgs": None, "pdf_text": "", "latest_year": 2024}
     
     def clean_code(val):
         return str(val).split('.')[0].strip()
@@ -37,6 +36,8 @@ def load_data():
     if os.path.exists("Finny_Transactions.csv"):
         try:
             df = pd.read_csv("Finny_Transactions.csv", sep=";", dtype=str)
+            
+            # Bedragen naar float
             if 'AmountDC_num' in df.columns:
                 df['AmountDC_num'] = df['AmountDC_num'].str.replace(',', '.').replace('nan', '0')
                 df['AmountDC_num'] = pd.to_numeric(df['AmountDC_num'], errors='coerce').fillna(0.0)
@@ -46,14 +47,11 @@ def load_data():
             
             if 'Finny_Year' in df.columns:
                 df['Year_Clean'] = df['Finny_Year'].astype(str).str.split('.').str[0]
-                
-                # HIER HALEN WE ALLE JAREN OP
-                valid_years = pd.to_numeric(df['Year_Clean'], errors='coerce').dropna().unique()
-                if len(valid_years) > 0:
-                    # Sorteer de jaren (2022, 2023, 2024)
-                    data["all_years"] = sorted(valid_years.astype(int).tolist())
+                valid_years = pd.to_numeric(df['Year_Clean'], errors='coerce').dropna()
+                if not valid_years.empty:
+                    data["latest_year"] = int(valid_years.max())
 
-            # Universal Search
+            # Universal Search kolom maken (Alles doorzoekbaar)
             cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
             existing = [c for c in cols if c in df.columns]
             df['UniversalSearch'] = df[existing].astype(str).agg(' '.join, axis=1).str.lower()
@@ -61,7 +59,7 @@ def load_data():
             data["trans"] = df
         except Exception as e: st.error(f"Fout Transacties: {e}")
 
-    # B. SYNONIEMEN
+    # B. SYNONIEMEN (De sleutel voor categorieën)
     if os.path.exists("Finny_Synonyms.csv"):
         try:
             df = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=str)
@@ -97,21 +95,18 @@ def load_data():
 # 3. LOGICA
 
 def get_intent(client, question):
-    """
-    Router: Bepaalt Bron & Context.
-    """
+    """Router: Bepaalt Bron & Context."""
     context_years = st.session_state["active_years"]
-    # Als context leeg is (eerste keer), gebruik data-defaults (wordt later gezet)
+    if not context_years: context_years = [2024]
     
     system_prompt = f"""
     Je bent de router van Finny.
     CONTEXT: Huidige focusjaren: {context_years}.
     
     TAAK:
-    1. 'source': 'PDF' (winst/balans/omzet) of 'CSV' (kosten/details/leveranciers).
-    2. 'analysis_type': 'lookup' (bedrag zoeken) of 'trend' (verloop).
-    3. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik de CONTEXT jaren.
-    4. 'keywords': Zoekwoorden.
+    1. 'source': 'PDF' (winst/balans/omzet/totaalplaatje) of 'CSV' (specifieke kosten/details/leveranciers/trends).
+    2. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik CONTEXT.
+    3. 'keywords': Zoekwoorden (bv "telefoon", "auto", "vodafone").
     
     Output JSON.
     """
@@ -130,11 +125,12 @@ def get_intent(client, question):
             intent['years'] = context_years
         return intent
     except:
-        return {"source": "PDF", "analysis_type": "lookup", "keywords": [], "years": context_years}
+        return {"source": "PDF", "keywords": [], "years": context_years}
 
 def analyze_csv_costs(data, intent):
     """
-    Analyseert kosten en pakt de Categorie uit Synoniemen.
+    Analyseert kosten.
+    Pakt AUTOMATISCH de 'Paraplu-categorie' erbij uit de synoniemenlijst.
     """
     if data["trans"] is None: return "Geen transacties."
     
@@ -147,57 +143,63 @@ def analyze_csv_costs(data, intent):
     df = df[df['Year_Clean'].isin(years)]
     if df.empty: return f"Geen data voor jaren {years}."
 
-    # 2. Filter 'Echte' Kosten
+    # 2. Filter 'Echte' Kosten (Verwijder resultaatboekingen die saldo op 0 zetten)
     mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
     df = df[~mask_tech]
 
-    # 3. BEPAAL CATEGORIE UIT SYNONIEMEN
+    # 3. ZOEKEN & CATEGORISEREN
     found_categories = set()
+    
+    # Zoek de 'Paraplu' categorie in de synoniemenlijst
     if keywords and data["syn"] is not None:
         for k in keywords:
             matches = data["syn"][data["syn"]['Synoniem'].str.contains(k.lower(), na=False)]
             if not matches.empty and 'Categorie' in matches.columns:
                 found_categories.update(matches['Categorie'].unique().tolist())
 
-    # 4. BEREKENINGEN
+    # 4. BEREKENINGEN (Twee sporen: Specifiek & Categorie)
 
-    # A. Specifieke Zoekopdracht
+    # A. Specifieke Zoekopdracht (Het woord zelf, bijv. "Vodafone")
     df_specific = pd.DataFrame()
     if keywords:
         pattern = '|'.join([re.escape(k.lower()) for k in keywords])
         mask_spec = df['UniversalSearch'].str.contains(pattern, na=False)
         df_specific = df[mask_spec]
     
-    # B. Categorie Totaal
+    # B. Categorie Totaal (De Paraplu, bijv. "Communicatiekosten")
     df_category = pd.DataFrame()
     if found_categories:
         cat_pattern = '|'.join([re.escape(c) for c in found_categories])
+        # Zoek in GL Description (daar staat de categorienaam vaak)
         mask_cat = df['Finny_GLDescription'].astype(str).str.contains(cat_pattern, case=False, na=False)
         df_category = df[mask_cat]
     else:
+        # Geen categorie gevonden? Dan is df_category leeg (of alles als geen keyword)
         if not keywords:
              df_category = df[df['Finny_GLCode'].str.startswith('4', na=False)]
 
-    # 5. Output
+    # 5. OUTPUT BOUWEN
     res = f"### ANALYSE ({', '.join(years)})\n"
     
+    # Tabel 1: Specifiek
     if not df_specific.empty:
         pivot_spec = df_specific.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
-        pivot_spec.columns = ['Jaar', f'Totaal "{", ".join(keywords)}"',]
-        res += f"\n**Zoekterm '{', '.join(keywords)}':**\n"
+        pivot_spec.columns = ['Jaar', f'Specifiek "{", ".join(keywords)}"']
         res += pivot_spec.to_markdown(index=False, floatfmt=".2f") + "\n\n"
     elif keywords:
-        res += f"Geen specifieke transacties voor '{keywords}'.\n\n"
+        res += f"Geen specifieke transacties gevonden voor '{keywords}'.\n\n"
 
+    # Tabel 2: Categorie Context (De Reality Check)
     if not df_category.empty and found_categories:
         cat_names = ", ".join(found_categories)
         pivot_cat = df_category.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
         pivot_cat.columns = ['Jaar', f'Totaal Categorie: {cat_names}']
-        res += f"\n**Vergelijking Categorie '{cat_names}':**\n"
+        res += f"**Context: Totale kosten in categorie '{cat_names}':**\n"
         res += pivot_cat.to_markdown(index=False, floatfmt=".2f") + "\n"
         
+        # Top 5 binnen de categorie tonen (zodat je ziet waar de kosten WEL zitten)
+        res += f"\n*Grootste kostenposten binnen {cat_names}:*\n"
         top = df_category.groupby('Description')['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
-        res += f"\n*Grootste posten in deze categorie:*\n"
         res += top.to_markdown(index=False, floatfmt=".2f")
 
     return res
@@ -216,26 +218,23 @@ if check_password():
     data = load_data()
 
     with st.sidebar:
+        # Logo Check
         logo_files = glob.glob("*.png") + glob.glob("*.jpg")
         if logo_files: st.image(logo_files[0], width=150)
             
         st.title("Finny")
         
         if data["trans"] is not None:
-            # ZET DEFAULT JAREN OP ALLE BESCHIKBARE JAREN (2022, 2023, 2024)
             if not st.session_state["active_years"]:
-                # Convert int list to string list for display/logic
-                st.session_state["active_years"] = [str(y) for y in data["all_years"]]
-            
+                st.session_state["active_years"] = [str(data["latest_year"])]
             st.caption(f"Geheugen: {st.session_state['active_years']}")
-        
+            
         if st.button("Nieuw Gesprek"): 
-            # Reset naar ALLE jaren
-            st.session_state["active_years"] = [str(y) for y in data["all_years"]]
+            st.session_state["active_years"] = [str(data["latest_year"])]
             st.session_state.messages = []
             st.rerun()
 
-    st.title("Finny")
+    st.title("Finny Demo")
     
     for msg in st.session_state.messages: 
         st.chat_message(msg["role"]).write(msg["content"])
@@ -265,7 +264,8 @@ if check_password():
                 
                 INSTRUCTIES:
                 - Gebruik de TABELLEN uit de context.
-                - Als je specifieke kosten toont én een categorie-totaal, leg het verschil uit.
+                - Als er een verschil is tussen 'Specifiek' (bijv Vodafone) en 'Categorie Totaal' (Communicatie), benoem dat dan duidelijk.
+                - Verzin geen bedragen.
                 """
                 
                 messages_payload = [{"role": "system", "content": f"{system_prompt_finny}\n\nDATA:\n{context}"}]
