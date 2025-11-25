@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # ==========================================
 # 1. CONFIGURATIE & STATE
 # ==========================================
-st.set_page_config(page_title="Finny", layout="wide")
+st.set_page_config(page_title="Finny Demo", page_icon="💰", layout="wide")
 load_dotenv()
 
 # HARDE EIS: Beschikbare jaren
@@ -35,6 +35,7 @@ if "client_profile" not in st.session_state:
     st.session_state.client_profile = {} # Leeg dict als default
 
 def check_password():
+    """Simpele wachtwoord beveiliging voor de demo."""
     if "password_correct" not in st.session_state:
         st.text_input("Wachtwoord", type="password", key="pw", on_change=lambda: st.session_state.update({"password_correct": st.session_state.pw == "demo2025"}))
         return False
@@ -67,7 +68,7 @@ def start_new_conversation():
     st.session_state.current_view = "chat"
 
 # ==========================================
-# 2. DATA LADEN
+# 2. DATA LADEN (ROBUUST)
 # ==========================================
 @st.cache_data(ttl=3600)
 def load_data():
@@ -79,6 +80,7 @@ def load_data():
     # A. TRANSACTIES
     if os.path.exists("Finny_Transactions.csv"):
         try:
+            # Gebruik latin1 voor NL Excel exports, forceer string conversie later
             df = pd.read_csv("Finny_Transactions.csv", sep=";", encoding="latin1") 
             
             if 'Finny_Year' in df.columns:
@@ -87,14 +89,13 @@ def load_data():
                 if not valid_years.empty:
                     data["latest_year"] = int(valid_years.max())
             
-            # Universal Search kolom maken
+            # Universal Search kolom maken (Alles doorzoekbaar maken, veilig als string)
             cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
             existing = [c for c in cols if c in df.columns]
-            # Hier forceren we al string conversie om later problemen te voorkomen
             df['UniversalSearch'] = df[existing].astype(str).agg(' '.join, axis=1).str.lower()
 
             data["trans"] = df
-        except Exception as e: st.error(f"Fout Transacties: {e}")
+        except Exception as e: st.error(f"Fout laden Transacties: {e}")
 
     # B. SYNONIEMEN
     if os.path.exists("Finny_Synonyms.csv"):
@@ -129,11 +130,11 @@ def load_data():
     return data
 
 # ==========================================
-# 3. LOGICA & ROUTER
+# 3. LOGICA & ROUTER (MET FALLBACK FIX)
 # ==========================================
 
 def get_intent(client, question):
-    """Router: Bepaalt Bron & Context."""
+    """Router: Bepaalt Bron & Context. Bevat harde fallback tegen KeyErrors."""
     context_years = st.session_state.get("active_years", AVAILABLE_YEARS)
     if not context_years: context_years = AVAILABLE_YEARS
 
@@ -142,12 +143,14 @@ def get_intent(client, question):
     CONTEXT: Huidige focusjaren: {context_years}.
     
     TAAK:
-    1. 'source': 'PDF' (winst/balans/omzet/totaalplaatje) of 'CSV' (specifieke kosten/details/leveranciers/trends).
+    1. 'source': 'PDF' (winst, balans, omzet, totaalplaatje, algemene vragen) of 'CSV' (specifieke kosten, details, leveranciers, trends, telefoon, auto).
     2. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik CONTEXT {AVAILABLE_YEARS}.
-    3. 'keywords': Zoekwoorden (bv "telefoon", "auto", "vodafone").
+    3. 'keywords': Zoekwoorden voor in de database (bv "telefoon", "auto", "vodafone").
     
     Output JSON.
     """
+
+    intent = {"source": "PDF", "keywords": [], "years": context_years} # Default safety
 
     try:
         res = client.chat.completions.create(
@@ -158,65 +161,76 @@ def get_intent(client, question):
             ],
             response_format={"type": "json_object"}
         )
-        intent = json.loads(res.choices[0].message.content)
-
-        # ROUTER FIX: Harde override voor telefoon/communicatie
-        q_lower = question.lower()
-        TELEFOON_TERMS = ["telefoon", "telefoonkosten", "bellen", "mobiel", "vodafone", "ziggo", "communicatiekosten"]
+        parsed = json.loads(res.choices[0].message.content)
         
-        if any(t in q_lower for t in TELEFOON_TERMS):
-            intent["source"] = "CSV"
-            kws = intent.get("keywords") or []
-            if not isinstance(kws, list): kws = []
-            for t in TELEFOON_TERMS:
-                if t in q_lower and t not in kws:
-                    kws.append(t)
-            intent["keywords"] = kws
+        # Valideer en update de default intent alleen als keys bestaan
+        if "source" in parsed: intent["source"] = parsed["source"]
+        if "keywords" in parsed: intent["keywords"] = parsed["keywords"]
+        if "years" in parsed: intent["years"] = parsed["years"]
 
-        # Jaren verwerken
-        if intent.get('years'):
-            raw_years = intent['years']
-            valid_years = [y for y in raw_years if int(y) in AVAILABLE_YEARS]
-            if not valid_years:
-                st.session_state["active_years"] = AVAILABLE_YEARS
-                intent['years'] = AVAILABLE_YEARS
-            else:
-                st.session_state["active_years"] = valid_years
-                intent['years'] = valid_years
+    except Exception:
+        # Bij JSON error of API fout: val stilzwijgend terug op PDF default
+        pass
+
+    # --- ROUTER OVERRIDE: Harde check voor telefoon/communicatie ---
+    q_lower = question.lower()
+    TELEFOON_TERMS = ["telefoon", "telefoonkosten", "bellen", "mobiel", "vodafone", "ziggo", "communicatiekosten"]
+    
+    if any(t in q_lower for t in TELEFOON_TERMS):
+        intent["source"] = "CSV"
+        kws = intent.get("keywords") or []
+        if not isinstance(kws, list): kws = []
+        for t in TELEFOON_TERMS:
+            if t in q_lower and t not in kws:
+                kws.append(t)
+        intent["keywords"] = kws
+    # -------------------------------------------------------------
+
+    # Jaren validatie (zorg dat we geen jaren opvragen die we niet hebben)
+    if intent.get('years'):
+        raw_years = intent['years']
+        # Filter alleen geldige jaren
+        valid_years = [y for y in raw_years if int(y) in AVAILABLE_YEARS]
+        
+        if not valid_years:
+            st.session_state["active_years"] = AVAILABLE_YEARS
+            intent['years'] = AVAILABLE_YEARS
         else:
-            intent['years'] = context_years
-            
-        return intent
-    except:
-        return {"source": "PDF", "keywords": [], "years": context_years}
+            st.session_state["active_years"] = valid_years
+            intent['years'] = valid_years
+    else:
+        intent['years'] = context_years
+        
+    return intent
 
 def analyze_csv_costs(data, intent):
     """
-    Analyseert kosten uit CSV op basis van keywords/synoniemen.
-    FIX: Gebruikt astype(str) voor alle .str operaties om AttributeError te voorkomen.
+    Analyseert kosten uit CSV.
+    FIX: Gebruikt overal .astype(str) om AttributeError te voorkomen.
     """
-    if data["trans"] is None: return "Geen transacties."
+    if data["trans"] is None: return "Geen transacties geladen."
 
     df = data["trans"].copy()
     keywords = intent.get("keywords", [])
     years = [str(y) for y in intent.get("years", AVAILABLE_YEARS)]
 
-    # 1. Filter Jaren
-    # Zorg dat Year_Clean veilig wordt vergeleken
-    df = df[df['Year_Clean'].astype(str).isin(years)]
+    # 1. Filter Jaren (Veilig)
+    if 'Year_Clean' in df.columns:
+        df = df[df['Year_Clean'].astype(str).isin(years)]
+    
     if df.empty: return f"Geen data gevonden voor de jaren {years}."
     
-    # 2. Filter 'Echte' Kosten
-    # FIX: astype(str) voor Description
-    mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
-    df = df[~mask_tech]
+    # 2. Filter 'Echte' Kosten (Resultaatboekingen eruit)
+    if 'Description' in df.columns:
+        mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
+        df = df[~mask_tech]
     
     # 3. ZOEKEN & CATEGORISEREN
     found_categories = set()
     if keywords and data["syn"] is not None:
         syn_df = data["syn"]
         for k in keywords:
-            # FIX: astype(str) voor Synoniem check in df_syn
+            # FIX: astype(str) voor Synoniem check
             if 'Synoniem' in syn_df.columns:
                 matches = syn_df[syn_df['Synoniem'].astype(str).str.contains(k.lower(), na=False)]
                 if not matches.empty and 'Categorie' in matches.columns:
@@ -227,9 +241,10 @@ def analyze_csv_costs(data, intent):
     df_specific = pd.DataFrame()
     if keywords:
         pattern = '|'.join([re.escape(k.lower()) for k in keywords])
-        # FIX: astype(str) voor UniversalSearch (hoewel load_data dit ook al doet, double-check)
-        mask_spec = df['UniversalSearch'].astype(str).str.contains(pattern, na=False)
-        df_specific = df[mask_spec]
+        # FIX: astype(str) voor UniversalSearch
+        if 'UniversalSearch' in df.columns:
+            mask_spec = df['UniversalSearch'].astype(str).str.contains(pattern, na=False)
+            df_specific = df[mask_spec]
 
     # B. Categorie Totaal
     df_category = pd.DataFrame()
@@ -240,17 +255,15 @@ def analyze_csv_costs(data, intent):
             mask_cat = df['Finny_GLDescription'].astype(str).str.contains(cat_pattern, case=False, na=False)
             df_category = df[mask_cat]
     else:
-        if not keywords:
-             # FIX: DE OORSPRONKELIJKE CRASH ZAT HIER
-             # We forceren Finny_GLCode naar string voordat we startswith doen.
-             if 'Finny_GLCode' in df.columns:
-                 df_category = df[df['Finny_GLCode'].astype(str).str.startswith('4', na=False)]
-             else:
-                 df_category = pd.DataFrame()
+        # Fallback: Zoek op GL code 4xxx (kosten) als er geen categorie is
+        if not keywords and 'Finny_GLCode' in df.columns:
+             # FIX: astype(str) om AttributeError te voorkomen
+             df_category = df[df['Finny_GLCode'].astype(str).str.startswith('4', na=False)]
     
-    # 5. OUTPUT BOUWEN
+    # 5. OUTPUT BOUWEN (Markdown)
     res = f"### ANALYSE ({', '.join(years)})\n"
 
+    # Tabel 1: Specifieke keywords
     if not df_specific.empty:
         pivot_spec = df_specific.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
         pivot_spec.columns = ['Jaar', f'Specifiek "{", ".join(keywords)}"']
@@ -258,6 +271,7 @@ def analyze_csv_costs(data, intent):
     elif keywords:
         res += f"Geen specifieke transacties gevonden voor '{keywords}'.\n\n"
 
+    # Tabel 2: Categorie context
     if not df_category.empty and found_categories:
         cat_names = ", ".join(found_categories)
         pivot_cat = df_category.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
@@ -266,9 +280,10 @@ def analyze_csv_costs(data, intent):
         res += pivot_cat.to_markdown(index=False, floatfmt=".2f") + "\n"
 
         res += f"\n*Grootste kostenposten binnen {cat_names}:*\n"
-        # Group by Description (astype str voor zekerheid in groupby display)
-        top = df_category.groupby(df_category['Description'].astype(str))['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
-        res += top.to_markdown(index=False, floatfmt=".2f")
+        # Group by Description (astype str voor zekerheid)
+        if 'Description' in df_category.columns:
+            top = df_category.groupby(df_category['Description'].astype(str))['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
+            res += top.to_markdown(index=False, floatfmt=".2f")
 
     return res
 
@@ -292,7 +307,7 @@ if check_password():
         # Logo
         logo_files = glob.glob("*.png") + glob.glob("*.jpg")
         if logo_files: st.image(logo_files[0], width=150)
-        st.title("Finny")
+        st.title("Finny Demo")
 
         # Geheugen weergave
         if data["trans"] is not None:
@@ -309,17 +324,24 @@ if check_password():
             
         st.markdown("---")
 
-        # MENU SELECTIE
+        # MENU SELECTIE (ROBUUST)
+        # We zorgen dat de index altijd geldig is
+        options = ["chat", "intro", "history", "share"]
+        try:
+            curr_index = options.index(st.session_state.current_view)
+        except ValueError:
+            curr_index = 0 # Fallback naar chat
+
         view_choice = st.radio(
             "Menu",
-            ("chat", "intro", "history", "share"),
+            options,
             format_func=lambda v: {
                 "chat": "Chat",
                 "intro": "Kennismaking",
                 "history": "Eerdere gesprekken",
                 "share": "Deel met accountant",
             }[v],
-            index=["chat", "intro", "history", "share"].index(st.session_state.current_view)
+            index=curr_index
         )
         
         if view_choice != st.session_state.current_view:
@@ -355,54 +377,50 @@ if check_password():
             st.chat_message("user").write(prompt)
             
             with st.chat_message("assistant"):
-                with st.spinner("..."):
+                with st.spinner("Finny denkt na..."):
                     # 1. Bepaal intent & Data
                     intent = get_intent(client, prompt)
+                    
                     context = ""
-                    if intent['source'] == "PDF":
+                    # Zekerheid check voor KeyError 'source'
+                    source = intent.get("source", "PDF") 
+                    
+                    if source == "PDF":
                         context = data["pdf_text"]
-                        st.caption(f"Bron: Jaarrekening | Jaren: {intent['years']}")
+                        st.caption(f"Bron: Jaarrekening | Jaren: {intent.get('years', [])}")
                     else:
                         context = analyze_csv_costs(data, intent)
-                        st.caption(f"Bron: Transacties | Focus: {intent['keywords']}")
+                        st.caption(f"Bron: Transacties | Focus: {intent.get('keywords', [])}")
                     
                     # 2. Profiel ophalen & integreren
                     profile = st.session_state.client_profile or {}
                     finance_level = profile.get("finance_knowledge", 3)
                     tax_level     = profile.get("tax_knowledge", 3)
-                    book_level    = profile.get("bookkeeping_knowledge", 3)
                     risk_pref     = profile.get("risk_preference", 3)
                     focus_areas   = profile.get("focus_areas", "")
-                    avoid_topics  = profile.get("avoid_topics", "")
 
                     profile_instructions = f"""
-                    PROFIEL GEBRUIKER:
-                    Kennis financiën: niveau {finance_level} (1=laag, 5=hoog)
-                    Kennis belastingen: niveau {tax_level}
-                    Kennis boekhouden: niveau {book_level}
-                    Risicoprofiel: {risk_pref} (1=zeer risicomijdend, 5=risicobereid)
-                    Focus: {focus_areas or '-'}
-                    Vermijden: {avoid_topics or '-'}
+                    PROFIEL VAN DE GEBRUIKER:
+                    - Kennisniveau Financiën: {finance_level}/5 (1=beginner, 5=expert).
+                    - Kennisniveau Belastingen: {tax_level}/5.
+                    - Risicobereidheid: {risk_pref}/5.
+                    - Focusgebieden: {focus_areas if focus_areas else 'Geen specifieke focus'}.
                     
-                    PAS JE UITLEG HIEROP AAN:
-                    - Als kennisniveau laag is (<3), leg kernbegrippen kort uit in normale taal en vermijd vakjargon.
-                    - Als kennisniveau hoog is (>=4), sla basisdefinities over en ga dieper in op nuances.
-                    - Neem het risicoprofiel mee in advies (voorzichtig vs kansrijk).
-                    - Ga niet in op 'Vermijden' onderwerpen tenzij gevraagd.
-                    """.strip()
+                    PAS JE TOON AAN:
+                    - Als kennis < 3: Leg vaktermen simpel uit (Jip-en-Janneke). Wees geruststellend.
+                    - Als kennis >= 4: Wees to-the-point, gebruik vaktermen, ga diep in op de cijfers.
+                    - Als risico < 3: Benadruk zekerheid en stabiliteit.
+                    - Als risico >= 4: Benadruk kansen en groei.
+                    """
 
                     # 3. System Prompt Samenstellen
                     system_prompt_finny = f"""
-                    Je bent Finny, een informele maar scherpe financiële assistent voor mkb-ondernemers.
-                    STIJL:
-                    - Spreek de gebruiker aan met 'je' en 'jij'.
-                    - Geen brievenstijl, geen aanhef.
-                    - Kort, duidelijk en eerlijk. Liever een "dat weet ik niet" dan verzonnen cijfers.
+                    Je bent Finny, de financiële assistent.
                     
                     INSTRUCTIES:
-                    - Je krijgt onder DATA de relevante stukken uit de jaarrekening (PDF) of een analyse van de transacties (CSV).
-                    - Gebruik alleen getallen die je in DATA ziet. Verzin geen bedragen.
-                    - Gebruik de TABELLEN uit de context.
+                    1. Gebruik ONDERSTAANDE DATA om antwoord te geven. Verzin GEEN cijfers.
+                    2. Als de data ontbreekt, zeg dat eerlijk.
+                    3. Gebruik de markdown tabellen uit de data in je antwoord.
                     
                     {profile_instructions}
                     """
@@ -457,7 +475,7 @@ if check_password():
                     "focus_areas": focus,
                     "avoid_topics": avoid
                 }
-                st.success("Profiel opgeslagen!")
+                st.success("Profiel opgeslagen! Finny houdt hier nu rekening mee in de chat.")
                 st.rerun()
         
         if st.session_state.client_profile:
@@ -465,10 +483,8 @@ if check_password():
             st.markdown("### Je huidige profiel")
             st.write(f"- **Financiën:** niveau {p['finance_knowledge']}")
             st.write(f"- **Belastingen:** niveau {p['tax_knowledge']}")
-            st.write(f"- **Boekhouden:** niveau {p['bookkeeping_knowledge']}")
             st.write(f"- **Risicoprofiel:** {p['risk_preference']}")
             st.write(f"- **Focus:** {p['focus_areas'] or '(nog niet ingevuld)'}")
-            st.write(f"- **Overslaan:** {p['avoid_topics'] or '(geen)'}")
 
     # --------------------------
     # VIEW: EERDERE GESPREKKEN
@@ -493,7 +509,7 @@ if check_password():
     # --------------------------
     elif view == "share":
         st.title("Deel met accountant")
-        st.write("Markeer de gesprekken die je wilt delen. Er wordt in deze demo nog niets daadwerkelijk verstuurd.")
+        st.write("Markeer de gesprekken die je wilt delen.")
         
         if not st.session_state.conversations:
             st.info("Geen gesprekken om te delen.")
