@@ -24,7 +24,9 @@ AVAILABLE_YEARS = [2022, 2023, 2024]
 if "active_years" not in st.session_state: st.session_state["active_years"] = AVAILABLE_YEARS
 if "messages" not in st.session_state: st.session_state.messages = []
 if "conversations" not in st.session_state: st.session_state.conversations = [] 
-if "current_view" not in st.session_state: st.session_state.current_view = "chat" 
+
+# AANPASSING: We starten standaard in de 'intro' (Kennismaking/Intake)
+if "current_view" not in st.session_state: st.session_state.current_view = "intro" 
 if "client_profile" not in st.session_state: st.session_state.client_profile = {} 
 
 def check_password():
@@ -75,11 +77,10 @@ def load_data():
             data["trans"] = df
         except Exception as e: st.error(f"Fout CSV: {e}")
 
-    # B. Synoniemen (CRUCIAAL VOOR ROUTER)
+    # B. Synoniemen
     if os.path.exists("Finny_Synonyms.csv"):
         try:
             df = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=str)
-            # Zorg dat alles lowercase strings zijn voor makkelijk zoeken
             if 'Synoniem' in df.columns:
                 df['Synoniem_Clean'] = df['Synoniem'].astype(str).str.lower().str.strip()
             data["syn"] = df
@@ -111,32 +112,22 @@ def load_data():
 # 3. ROUTER & LOGIC
 # ==========================================
 def get_intent(client, question, data):
-    """
-    Slimmere router: Gebruikt Finny_Synonyms.csv om te bepalen of iets CSV is.
-    """
     q_lower = question.lower()
     context_years = st.session_state.get("active_years", AVAILABLE_YEARS)
 
-    # 1. CHECK SYNONIEMEN BESTAND (De bron van waarheid)
+    # 1. CHECK SYNONIEMEN
     csv_keywords = []
-    
     if data["syn"] is not None and not data["syn"].empty and 'Synoniem_Clean' in data["syn"].columns:
-        # Haal alle synoniemen op die in de vraag voorkomen
-        # We checken of het synoniem als substring in de vraag zit
         known_synonyms = data["syn"]['Synoniem_Clean'].dropna().unique()
-        
         for syn in known_synonyms:
-            # Check of synoniem (bv "vodafone") in de vraag zit
-            if syn in q_lower and len(syn) > 2: # >2 om ruis te voorkomen
+            if syn in q_lower and len(syn) > 2:
                 csv_keywords.append(syn)
     
-    # Als we synoniemen hebben gevonden -> Direct naar CSV
     if csv_keywords:
-        # Check wel even of het geen expliciete "waarom stijgt dit" vraag is
         if not any(x in q_lower for x in ["waarom", "hoe komt", "oorzaak", "verloop"]):
             return {"source": "CSV", "keywords": csv_keywords, "years": context_years}
 
-    # 2. CHECK PDF SIGNALEN (Trends / Vergelijkingen)
+    # 2. CHECK PDF SIGNALEN
     TREND_TERMS = ["stijgen", "dalen", "toenemen", "afnemen", "waarom", "hoe komt", "oorzaak", "verloop", "trend", "verschil", "vergelijk", "winst", "omzet", "resultaat", "balans"]
     if any(t in q_lower for t in TREND_TERMS):
         return {"source": "PDF", "keywords": [], "years": context_years}
@@ -161,21 +152,17 @@ def analyze_csv_costs(data, intent):
     keywords = intent.get("keywords", [])
     years = [str(y) for y in intent.get("years", AVAILABLE_YEARS)]
     
-    # Veilig filteren
     if 'Year_Clean' in df.columns: df = df[df['Year_Clean'].astype(str).isin(years)]
     if 'Description' in df.columns: df = df[~df['Description'].astype(str).str.contains(r'(resultaat|winst|balans)', case=False, na=False)]
 
-    # Zoeken op Keywords + Synoniemen koppelen
     found_categories = set()
     df_found = pd.DataFrame()
     
     if keywords:
-        # A. Zoek in Transacties (UniversalSearch)
         pat = '|'.join([re.escape(k.lower()) for k in keywords])
         if 'UniversalSearch' in df.columns:
             df_found = df[df['UniversalSearch'].astype(str).str.contains(pat, na=False)]
         
-        # B. Zoek bijbehorende Categorie in Synoniemen bestand
         if data["syn"] is not None:
              syn_df = data["syn"]
              for k in keywords:
@@ -183,26 +170,21 @@ def analyze_csv_costs(data, intent):
                  if not matches.empty and 'Categorie' in matches.columns:
                      found_categories.update(matches['Categorie'].dropna().unique())
 
-    # Als we categorieën hebben gevonden via synoniemen, haal die transacties er OOK bij
     df_cat = pd.DataFrame()
     if found_categories:
         cat_pat = '|'.join([re.escape(c) for c in found_categories])
         if 'Finny_GLDescription' in df.columns:
             df_cat = df[df['Finny_GLDescription'].astype(str).str.contains(cat_pat, case=False, na=False)]
     
-    # Combineer resultaten (specifieke hits + categorie hits)
     df_total = pd.concat([df_found, df_cat]).drop_duplicates()
 
     if df_total.empty:
         return f"Geen transacties gevonden voor: {keywords}. (Gecheckt in synoniemen en transacties)."
     
-    # Samenvatting maken
     total = df_total['AmountDC_num'].sum() if 'AmountDC_num' in df_total.columns else 0
     
     res = f"### DETAILS UIT TRANSACTIES ({', '.join(years)})\n"
-    if found_categories:
-        res += f"**Gevonden categorieën:** {', '.join(found_categories)}\n\n"
-        
+    if found_categories: res += f"**Gevonden categorieën:** {', '.join(found_categories)}\n\n"
     res += f"**Totaalbedrag:** € {total:,.2f}\n\n"
     
     if 'Description' in df_total.columns:
@@ -224,15 +206,20 @@ if check_password():
     with st.sidebar:
         if os.path.exists(main_logo): st.image(main_logo, width=150)
         st.title("Finny Demo")
-        if data["company_context"]: st.success("Bedrijfsprofiel actief")
+        
+        # AANPASSING: Geen groene succes-melding meer
+        # if data["company_context"]: st.success("Bedrijfsprofiel actief") <-- WEG
+        
+        st.caption(f"Geheugen: {st.session_state.get('active_years', AVAILABLE_YEARS)}")
         st.markdown("---")
+        
         if st.button("Nieuw Gesprek", use_container_width=True): 
             start_new_conversation()
             st.rerun()
         st.markdown("---")
         
-        # Menu logic
-        opts = ["chat", "intro", "history", "share"]
+        # AANPASSING: Kennismaking BOVENAAN
+        opts = ["intro", "chat", "history", "share"]
         curr_idx = opts.index(st.session_state.current_view) if st.session_state.current_view in opts else 0
         choice = st.radio("Menu", opts, index=curr_idx, format_func=lambda x: {"chat":"Chat","intro":"Kennismaking","history":"Gesprekken","share":"Accountant"}[x])
         if choice != st.session_state.current_view:
@@ -242,7 +229,33 @@ if check_password():
     # VIEW ROUTING
     view = st.session_state.current_view
     
-    if view == "chat":
+    # VIEW: INTRO (Nu de default start)
+    if view == "intro":
+        st.title("Welkom bij Finny")
+        st.write("Laten we even kennismaken. Upload je foto en vul je profiel in, dan kan ik je beter helpen.")
+        curr = st.session_state.client_profile
+        
+        up = st.file_uploader("Profielfoto", type=["jpg","png"])
+        if up: 
+            curr["avatar"] = up
+            st.image(up, width=100)
+        elif curr.get("avatar"): st.image(curr["avatar"], width=100)
+
+        with st.form("prof"):
+            fk = st.slider("Financiële kennis (1=Beginner, 5=Expert)", 1, 5, curr.get("finance_knowledge", 2))
+            risk = st.slider("Risicobereidheid", 1, 5, curr.get("risk_preference", 3))
+            focus = st.text_input("Focusgebied (bijv. Kostenbesparing)", curr.get("focus_areas", ""))
+            
+            if st.form_submit_button("Opslaan & Starten"):
+                curr.update({"finance_knowledge": fk, "risk_preference": risk, "focus_areas": focus})
+                st.session_state.client_profile = curr
+                st.success("Opgeslagen! Je kunt nu naar de chat.")
+                # We sturen de gebruiker automatisch door naar de chat voor een soepele ervaring
+                st.session_state.current_view = "chat"
+                st.rerun()
+
+    # VIEW: CHAT
+    elif view == "chat":
         st.title("Finny Demo")
         
         # Avatars
@@ -258,13 +271,11 @@ if check_password():
             
             with st.chat_message("assistant", avatar=finny_av):
                 with st.spinner("..."):
-                    # 1. Router krijgt nu DATA mee voor de synoniemen check
                     intent = get_intent(client, prompt, data)
                     source = intent.get("source", "PDF")
                     
-                    # Context laden
                     if source == "PDF":
-                        context = data["pdf_text"] # ALTIJD de tekst meegeven
+                        context = data["pdf_text"]
                         caption_txt = f"Bron: Jaarrekening (Trends) | Jaren: {intent.get('years')}"
                     else:
                         context = analyze_csv_costs(data, intent)
@@ -272,7 +283,6 @@ if check_password():
                     
                     st.caption(caption_txt)
 
-                    # Profiel Logica
                     profile = st.session_state.client_profile
                     fin_know = profile.get("finance_knowledge", 3)
                     
@@ -305,28 +315,6 @@ if check_password():
                     reply = res.choices[0].message.content
                     st.write(reply)
                     st.session_state.messages.append({"role": "assistant", "content": reply})
-
-    elif view == "intro":
-        st.title("Kennismaking")
-        st.write("Upload een foto en vul je profiel in voor betere antwoorden.")
-        curr = st.session_state.client_profile
-        
-        up = st.file_uploader("Profielfoto", type=["jpg","png"])
-        if up: 
-            curr["avatar"] = up
-            st.image(up, width=100)
-        elif curr.get("avatar"): st.image(curr["avatar"], width=100)
-
-        with st.form("prof"):
-            fk = st.slider("Financiële kennis (1=Beginner, 5=Expert)", 1, 5, curr.get("finance_knowledge", 2))
-            risk = st.slider("Risicobereidheid", 1, 5, curr.get("risk_preference", 3))
-            focus = st.text_input("Focusgebied", curr.get("focus_areas", ""))
-            
-            if st.form_submit_button("Opslaan"):
-                curr.update({"finance_knowledge": fk, "risk_preference": risk, "focus_areas": focus})
-                st.session_state.client_profile = curr
-                st.success("Opgeslagen! Finny past haar taalgebruik nu aan.")
-                st.rerun()
 
     elif view == "history":
         st.title("Gesprekken")
