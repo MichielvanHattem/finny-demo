@@ -1,3 +1,6 @@
+import streamlit as st
+import pandas as pd
+import os
 import json
 import re
 import glob
@@ -6,18 +9,17 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# 1. CONFIGURATIE
-# 1. CONFIGURATIE & CONSTANTEN
+# ==========================================
+# 1. CONFIGURATIE & STATE
+# ==========================================
 st.set_page_config(page_title="Finny", layout="wide")
 load_dotenv()
 
-# Geheugen initialiseren
 # HARDE EIS: Beschikbare jaren
 AVAILABLE_YEARS = [2022, 2023, 2024]
 
 # --- STATE MANAGEMENT INITIALISATIE ---
 if "active_years" not in st.session_state:
-    st.session_state["active_years"] = [2024]
     st.session_state["active_years"] = AVAILABLE_YEARS
 
 if "messages" not in st.session_state: 
@@ -38,9 +40,7 @@ def check_password():
         return False
     return st.session_state["password_correct"]
 
-# 2. DATA LADEN
 # --- HULPFUNCTIES VOOR NAVIGATIE & LOGGING ---
-
 def start_new_conversation():
     """Slaat huidig gesprek op en reset de chat."""
     if st.session_state.messages:
@@ -69,28 +69,28 @@ def start_new_conversation():
 def navigate_to(view_name):
     st.session_state.current_view = view_name
 
-# 2. DATA LADEN (Bestaande logica behouden, maar 'latest_year' output wordt genegeerd in UI)
+# ==========================================
+# 2. DATA LADEN
+# ==========================================
 @st.cache_data(ttl=3600)
 def load_data():
     data = {"syn": None, "trans": None, "rgs": None, "pdf_text": "", "latest_year": 2024}
 
     def clean_code(val):
         return str(val).split('.')[0].strip()
-
     
     # A. TRANSACTIES
     if os.path.exists("Finny_Transactions.csv"):
         try:
-@@ -47,19 +91,17 @@ def clean_code(val):
-
+            df = pd.read_csv("Finny_Transactions.csv", sep=";", encoding="latin1") # Veilige encoding
+            # Kolommen normaliseren (optioneel, maar veiligheidshalve)
+            # Hier gaan we ervan uit dat de CSV structuur klopt zoals gisteren
+            
             if 'Finny_Year' in df.columns:
                 df['Year_Clean'] = df['Finny_Year'].astype(str).str.split('.').str[0]
                 valid_years = pd.to_numeric(df['Year_Clean'], errors='coerce').dropna()
                 if not valid_years.empty:
                     data["latest_year"] = int(valid_years.max())
-
-                # We negeren hier de logica om data["latest_year"] te overschrijven voor de UI,
-                # omdat we AVAILABLE_YEARS gebruiken.
             
             # Universal Search kolom maken (Alles doorzoekbaar)
             cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
@@ -100,41 +100,46 @@ def load_data():
             data["trans"] = df
         except Exception as e: st.error(f"Fout Transacties: {e}")
 
-    # B. SYNONIEMEN (De sleutel voor categorieën)
-    
     # B. SYNONIEMEN
     if os.path.exists("Finny_Synonyms.csv"):
         try:
             df = pd.read_csv("Finny_Synonyms.csv", sep=";", dtype=str)
-@@ -68,7 +110,7 @@ def clean_code(val):
+            if 'Finny_GLCode' in df.columns:
                 df['Finny_GLCode'] = df['Finny_GLCode'].apply(clean_code)
             data["syn"] = df
         except: pass
-
     
     # C. RGS
     if os.path.exists("Finny_RGS.csv"):
         try:
-@@ -79,7 +121,7 @@ def clean_code(val):
-            df['SearchBlob'] = df[cols].astype(str).agg(' '.join, axis=1).str.lower()
+            df = pd.read_csv("Finny_RGS.csv", sep=";", dtype=str)
+            cols = ['RGS_Referentiecode', 'RGS_Omschrijving']
+            if all(c in df.columns for c in cols):
+                df['SearchBlob'] = df[cols].astype(str).agg(' '.join, axis=1).str.lower()
             data["rgs"] = df
         except: pass
-
     
     # D. PDF
-    pdf_files = [f for f in os.listdir('.') if f.endswith('.pdf')]
+    pdf_files = glob.glob("*.pdf")
     for pdf in pdf_files:
-@@ -93,19 +135,18 @@ def clean_code(val):
+        try:
+            reader = PdfReader(pdf)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            data["pdf_text"] += f"\n--- {pdf} ---\n{text}"
+        except: pass
+        
     return data
 
-# 3. LOGICA
+# ==========================================
+# 3. LOGICA & ROUTER
+# ==========================================
 
 def get_intent(client, question):
     """Router: Bepaalt Bron & Context."""
-    context_years = st.session_state["active_years"]
-    if not context_years: context_years = [2024]
-    # Gebruik AVAILABLE_YEARS als fallback
     context_years = st.session_state.get("active_years", AVAILABLE_YEARS)
+    if not context_years: context_years = AVAILABLE_YEARS
 
     system_prompt = f"""
     Je bent de router van Finny.
@@ -142,22 +147,48 @@ def get_intent(client, question):
     
     TAAK:
     1. 'source': 'PDF' (winst/balans/omzet/totaalplaatje) of 'CSV' (specifieke kosten/details/leveranciers/trends).
-    2. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik CONTEXT.
     2. 'years': Welke jaren? ALS GEEN JAAR GENOEMD: Gebruik CONTEXT {AVAILABLE_YEARS}.
     3. 'keywords': Zoekwoorden (bv "telefoon", "auto", "vodafone").
     
     Output JSON.
-@@ -120,18 +161,25 @@ def get_intent(client, question):
+    """
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            response_format={"type": "json_object"}
+        )
         intent = json.loads(res.choices[0].message.content)
 
+        # ---------------------------------------------------------
+        # ROUTER FIX: Harde override voor telefoon/communicatie
+        # ---------------------------------------------------------
+        q_lower = question.lower()
+        TELEFOON_TERMS = ["telefoon", "telefoonkosten", "bellen", "mobiel", "vodafone", "ziggo", "communicatiekosten"]
+        
+        if any(t in q_lower for t in TELEFOON_TERMS):
+            intent["source"] = "CSV"
+            # Zorg dat de zoekterm in keywords staat
+            kws = intent.get("keywords") or []
+            if not isinstance(kws, list): kws = []
+            
+            for t in TELEFOON_TERMS:
+                if t in q_lower and t not in kws:
+                    kws.append(t)
+            intent["keywords"] = kws
+        # ---------------------------------------------------------
+
+        # Jaren verwerken
         if intent.get('years'):
-            st.session_state["active_years"] = intent['years']
-            # Filter: alleen jaren toestaan die in AVAILABLE_YEARS zitten
             raw_years = intent['years']
             valid_years = [y for y in raw_years if int(y) in AVAILABLE_YEARS]
             
             if not valid_years:
-                # Als de AI jaren verzint buiten de scope (bv 2025), fallback naar alles
+                # Als de AI jaren verzint buiten de scope, fallback naar alles
                 st.session_state["active_years"] = AVAILABLE_YEARS
                 intent['years'] = AVAILABLE_YEARS
             else:
@@ -165,32 +196,28 @@ def get_intent(client, question):
                 intent['years'] = valid_years
         else:
             intent['years'] = context_years
+            
         return intent
     except:
         return {"source": "PDF", "keywords": [], "years": context_years}
 
 def analyze_csv_costs(data, intent):
     """
-    Analyseert kosten.
-    Pakt AUTOMATISCH de 'Paraplu-categorie' erbij uit de synoniemenlijst.
+    Analyseert kosten uit CSV op basis van keywords/synoniemen.
     """
-    """Analyseert kosten."""
     if data["trans"] is None: return "Geen transacties."
 
     df = data["trans"].copy()
-@@ -141,70 +189,59 @@ def analyze_csv_costs(data, intent):
+    keywords = intent.get("keywords", [])
+    years = [str(y) for y in intent.get("years", AVAILABLE_YEARS)]
 
     # 1. Filter Jaren
     df = df[df['Year_Clean'].isin(years)]
-    if df.empty: return f"Geen data voor jaren {years}."
-
-    # 2. Filter 'Echte' Kosten (Verwijder resultaatboekingen die saldo op 0 zetten)
-    if df.empty: return f"Geen data gevonden voor de jaren {years} (Beschikbaar: {AVAILABLE_YEARS})."
+    if df.empty: return f"Geen data gevonden voor de jaren {years}."
     
-    # 2. Filter 'Echte' Kosten
+    # 2. Filter 'Echte' Kosten (Resultaatboekingen eruit)
     mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
     df = df[~mask_tech]
-
     
     # 3. ZOEKEN & CATEGORISEREN
     found_categories = set()
@@ -202,11 +229,9 @@ def analyze_csv_costs(data, intent):
             if not matches.empty and 'Categorie' in matches.columns:
                 found_categories.update(matches['Categorie'].unique().tolist())
 
-    # 4. BEREKENINGEN (Twee sporen: Specifiek & Categorie)
+    # 4. BEREKENINGEN
 
     # A. Specifieke Zoekopdracht (Het woord zelf, bijv. "Vodafone")
-    
-    # 4. BEREKENINGEN
     df_specific = pd.DataFrame()
     if keywords:
         pattern = '|'.join([re.escape(k.lower()) for k in keywords])
@@ -217,14 +242,12 @@ def analyze_csv_costs(data, intent):
     df_category = pd.DataFrame()
     if found_categories:
         cat_pattern = '|'.join([re.escape(c) for c in found_categories])
-        # Zoek in GL Description (daar staat de categorienaam vaak)
         mask_cat = df['Finny_GLDescription'].astype(str).str.contains(cat_pattern, case=False, na=False)
         df_category = df[mask_cat]
     else:
-        # Geen categorie gevonden? Dan is df_category leeg (of alles als geen keyword)
+        # Fallback: als geen categorie gevonden, kijk of we iets met GL codes kunnen (4xxx zijn vaak kosten)
         if not keywords:
              df_category = df[df['Finny_GLCode'].str.startswith('4', na=False)]
-
     
     # 5. OUTPUT BOUWEN
     res = f"### ANALYSE ({', '.join(years)})\n"
@@ -237,8 +260,7 @@ def analyze_csv_costs(data, intent):
     elif keywords:
         res += f"Geen specifieke transacties gevonden voor '{keywords}'.\n\n"
 
-    # Tabel 2: Categorie Context (De Reality Check)
-    
+    # Tabel 2: Categorie Context
     if not df_category.empty and found_categories:
         cat_names = ", ".join(found_categories)
         pivot_cat = df_category.groupby('Year_Clean')['AmountDC_num'].sum().reset_index()
@@ -246,101 +268,51 @@ def analyze_csv_costs(data, intent):
         res += f"**Context: Totale kosten in categorie '{cat_names}':**\n"
         res += pivot_cat.to_markdown(index=False, floatfmt=".2f") + "\n"
 
-        # Top 5 binnen de categorie tonen (zodat je ziet waar de kosten WEL zitten)
+        # Top 5 binnen de categorie
         res += f"\n*Grootste kostenposten binnen {cat_names}:*\n"
         top = df_category.groupby('Description')['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
         res += top.to_markdown(index=False, floatfmt=".2f")
 
     return res
 
-# 4. UI
+# ==========================================
 # 4. UI HOOFDLOOP
+# ==========================================
 if check_password():
     api_key = os.getenv("OPENAI_API_KEY") 
     if not api_key and "OPENAI_API_KEY" in st.secrets:
-@@ -216,67 +253,204 @@ def analyze_csv_costs(data, intent):
+        api_key = st.secrets["OPENAI_API_KEY"]
+    
+    if not api_key:
+        st.error("Geen OpenAI API Key gevonden.")
+        st.stop()
 
     client = OpenAI(api_key=api_key)
     data = load_data()
-
     
     # --- SIDEBAR ---
     with st.sidebar:
         # Logo Check
         logo_files = glob.glob("*.png") + glob.glob("*.jpg")
         if logo_files: st.image(logo_files[0], width=150)
-
         st.title("Finny")
 
-        # Geheugen weergave (Altijd AVAILABLE_YEARS gebruiken)
+        # Geheugen weergave
         if data["trans"] is not None:
-            if not st.session_state["active_years"]:
-                st.session_state["active_years"] = [str(data["latest_year"])]
-            st.caption(f"Geheugen: {st.session_state['active_years']}")
-            # Weergave welke jaren actief zijn in de context van de huidige chat
             current_active = st.session_state.get("active_years", AVAILABLE_YEARS)
             st.caption(f"Geheugen: {current_active}")
-            # Optioneel: toon wat er fysiek beschikbaar is
             st.text(f"Beschikbaar: {AVAILABLE_YEARS}")
         
         st.markdown("---")
         
-        # De 4 navigatieknoppen
+        # Navigatie
         if st.button("Nieuw Gesprek", use_container_width=True): 
             start_new_conversation()
             st.rerun()
 
-        if st.button("Nieuw Gesprek"): 
-            st.session_state["active_years"] = [str(data["latest_year"])]
-            st.session_state.messages = []
         if st.button("Eerdere gesprekken", use_container_width=True):
             navigate_to("history")
             st.rerun()
-
-    st.title("Finny Demo")
-    
-    for msg in st.session_state.messages: 
-        st.chat_message(msg["role"]).write(msg["content"])
-        if st.button("Deel met accountant", use_container_width=True):
-            navigate_to("share")
-            st.rerun()
-
-    if prompt := st.chat_input("Vraag Finny..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        st.chat_message("user").write(prompt)
-        if st.button("Kennismaking met Finny", use_container_width=True):
-            navigate_to("intro")
-            st.rerun()
-
-        with st.chat_message("assistant"):
-            with st.spinner("..."):
-                intent = get_intent(client, prompt)
-                
-                context = ""
-                if intent['source'] == "PDF":
-                    context = data["pdf_text"]
-                    st.caption(f"Bron: Jaarrekening | Jaren: {intent['years']}")
-                else:
-                    context = analyze_csv_costs(data, intent)
-                    st.caption(f"Bron: Transacties | Focus: {intent['keywords']}")
-                
-                system_prompt_finny = """
-                Je bent Finny, een informele financiële assistent.
-                STIJL:
-                - Spreek aan met 'je/jij'.
-                - GEEN briefformaat.
-                - Direct en zakelijk.
-                
-                INSTRUCTIES:
-                - Gebruik de TABELLEN uit de context.
-                - Als er een verschil is tussen 'Specifiek' (bijv Vodafone) en 'Categorie Totaal' (Communicatie), benoem dat dan duidelijk.
-                - Verzin geen bedragen.
-                """
-        # Teller voor gedeelde items
-        shared_count = sum(1 for c in st.session_state.conversations if c.get("shared_with_accountant"))
-        if shared_count > 0:
-            st.markdown("---")
-            st.info(f"Gemarkeerd voor accountant: {shared_count} gesprekken")
 
     # --- VIEW ROUTER ---
     view = st.session_state.current_view
@@ -349,8 +321,7 @@ if check_password():
     if view == "chat":
         st.title("Finny Demo")
         
-        # Waarschuwing als gebruiker buiten bereik vraagt (optionele eis)
-        # Checken we simpelweg op basis van wat er in active_years staat
+        # Waarschuwing als gebruiker buiten bereik vraagt
         active = st.session_state.get("active_years", [])
         if any(y not in AVAILABLE_YEARS for y in active):
             st.warning(f"Let op: In deze demo zijn alleen de jaren {AVAILABLE_YEARS} beschikbaar.")
@@ -358,14 +329,14 @@ if check_password():
         for msg in st.session_state.messages: 
             st.chat_message(msg["role"]).write(msg["content"])
 
-                messages_payload = [{"role": "system", "content": f"{system_prompt_finny}\n\nDATA:\n{context}"}]
-                for msg in st.session_state.messages[-5:]:
-                    role = "user" if msg["role"] == "user" else "assistant"
-                    messages_payload.append({"role": role, "content": msg["content"]})
         if prompt := st.chat_input("Vraag Finny..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.chat_message("user").write(prompt)
             
+            if st.button("Kennismaking met Finny", use_container_width=True):
+                navigate_to("intro")
+                st.rerun()
+
             with st.chat_message("assistant"):
                 with st.spinner("..."):
                     intent = get_intent(client, prompt)
@@ -404,6 +375,15 @@ if check_password():
                     st.write(reply)
                     st.session_state.messages.append({"role": "assistant", "content": reply})
 
+        # Teller voor gedeelde items
+        shared_count = sum(1 for c in st.session_state.conversations if c.get("shared_with_accountant"))
+        if shared_count > 0:
+            st.markdown("---")
+            st.info(f"Gemarkeerd voor accountant: {shared_count} gesprekken")
+            if st.button("Deel met accountant", use_container_width=True):
+                navigate_to("share")
+                st.rerun()
+
     # VIEW: EERDERE GESPREKKEN
     elif view == "history":
         st.title("Eerdere gesprekken")
@@ -432,11 +412,9 @@ if check_password():
         if not st.session_state.conversations:
             st.info("Geen gesprekken om te delen.")
         else:
-            # Formulier om selectie te bevestigen
             with st.form("share_form"):
                 selection = {}
                 for i, conv in enumerate(st.session_state.conversations):
-                    # Checkbox per gesprek
                     is_checked = st.checkbox(
                         f"{conv['timestamp'].strftime('%d-%m %H:%M')} - {conv['title']}",
                         value=conv['shared_with_accountant'],
@@ -444,24 +422,19 @@ if check_password():
                     )
                     selection[i] = is_checked
                     
-                    # Korte preview
                     with st.expander("Bekijk inhoud", expanded=False):
                         for msg in conv['messages']:
                             st.text(f"{msg['role']}: {msg['content'][:100]}...")
 
-                res = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages_payload
-                )
-                reply = res.choices[0].message.content
-                st.write(reply)
-                st.session_state.messages.append({"role": "assistant", "content": reply})
                 if st.form_submit_button("Bevestig selectie"):
-                    # Update de state
                     for i, checked in selection.items():
                         st.session_state.conversations[i]['shared_with_accountant'] = checked
                     st.success("De gemarkeerde gesprekken zijn aangemerkt om te delen met je accountant.")
                     st.rerun()
+            
+            if st.button("Terug naar chat"):
+                navigate_to("chat")
+                st.rerun()
 
     # VIEW: KENNISMAKING
     elif view == "intro":
@@ -500,7 +473,6 @@ if check_password():
                 st.success("Profiel opgeslagen!")
                 st.rerun()
         
-        # Toon samenvatting als er een profiel is
         if st.session_state.client_profile:
             p = st.session_state.client_profile
             st.markdown("### Je huidige profiel")
