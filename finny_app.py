@@ -64,11 +64,10 @@ def start_new_conversation():
     # Reset
     st.session_state.messages = []
     st.session_state["active_years"] = AVAILABLE_YEARS
-    # We blijven in de chat view na een nieuw gesprek
     st.session_state.current_view = "chat"
 
 # ==========================================
-# 2. DATA LADEN (Stabiele versie)
+# 2. DATA LADEN
 # ==========================================
 @st.cache_data(ttl=3600)
 def load_data():
@@ -91,6 +90,7 @@ def load_data():
             # Universal Search kolom maken
             cols = ['Description', 'AccountName', 'Finny_GLDescription', 'Finny_GLCode']
             existing = [c for c in cols if c in df.columns]
+            # Hier forceren we al string conversie om later problemen te voorkomen
             df['UniversalSearch'] = df[existing].astype(str).agg(' '.join, axis=1).str.lower()
 
             data["trans"] = df
@@ -191,7 +191,10 @@ def get_intent(client, question):
         return {"source": "PDF", "keywords": [], "years": context_years}
 
 def analyze_csv_costs(data, intent):
-    """Analyseert kosten uit CSV op basis van keywords/synoniemen."""
+    """
+    Analyseert kosten uit CSV op basis van keywords/synoniemen.
+    FIX: Gebruikt astype(str) voor alle .str operaties om AttributeError te voorkomen.
+    """
     if data["trans"] is None: return "Geen transacties."
 
     df = data["trans"].copy()
@@ -199,38 +202,51 @@ def analyze_csv_costs(data, intent):
     years = [str(y) for y in intent.get("years", AVAILABLE_YEARS)]
 
     # 1. Filter Jaren
-    df = df[df['Year_Clean'].isin(years)]
+    # Zorg dat Year_Clean veilig wordt vergeleken
+    df = df[df['Year_Clean'].astype(str).isin(years)]
     if df.empty: return f"Geen data gevonden voor de jaren {years}."
     
     # 2. Filter 'Echte' Kosten
+    # FIX: astype(str) voor Description
     mask_tech = df['Description'].astype(str).str.contains(r'(resultaat|winst|balans|afsluiting)', case=False, na=False)
     df = df[~mask_tech]
     
     # 3. ZOEKEN & CATEGORISEREN
     found_categories = set()
     if keywords and data["syn"] is not None:
+        syn_df = data["syn"]
         for k in keywords:
-            matches = data["syn"][data["syn"]['Synoniem'].str.contains(k.lower(), na=False)]
-            if not matches.empty and 'Categorie' in matches.columns:
-                found_categories.update(matches['Categorie'].unique().tolist())
+            # FIX: astype(str) voor Synoniem check in df_syn
+            if 'Synoniem' in syn_df.columns:
+                matches = syn_df[syn_df['Synoniem'].astype(str).str.contains(k.lower(), na=False)]
+                if not matches.empty and 'Categorie' in matches.columns:
+                    found_categories.update(matches['Categorie'].unique().tolist())
 
     # 4. BEREKENINGEN
     # A. Specifieke Zoekopdracht
     df_specific = pd.DataFrame()
     if keywords:
         pattern = '|'.join([re.escape(k.lower()) for k in keywords])
-        mask_spec = df['UniversalSearch'].str.contains(pattern, na=False)
+        # FIX: astype(str) voor UniversalSearch (hoewel load_data dit ook al doet, double-check)
+        mask_spec = df['UniversalSearch'].astype(str).str.contains(pattern, na=False)
         df_specific = df[mask_spec]
 
     # B. Categorie Totaal
     df_category = pd.DataFrame()
     if found_categories:
         cat_pattern = '|'.join([re.escape(c) for c in found_categories])
-        mask_cat = df['Finny_GLDescription'].astype(str).str.contains(cat_pattern, case=False, na=False)
-        df_category = df[mask_cat]
+        # FIX: astype(str) voor Finny_GLDescription
+        if 'Finny_GLDescription' in df.columns:
+            mask_cat = df['Finny_GLDescription'].astype(str).str.contains(cat_pattern, case=False, na=False)
+            df_category = df[mask_cat]
     else:
         if not keywords:
-             df_category = df[df['Finny_GLCode'].str.startswith('4', na=False)]
+             # FIX: DE OORSPRONKELIJKE CRASH ZAT HIER
+             # We forceren Finny_GLCode naar string voordat we startswith doen.
+             if 'Finny_GLCode' in df.columns:
+                 df_category = df[df['Finny_GLCode'].astype(str).str.startswith('4', na=False)]
+             else:
+                 df_category = pd.DataFrame()
     
     # 5. OUTPUT BOUWEN
     res = f"### ANALYSE ({', '.join(years)})\n"
@@ -250,7 +266,8 @@ def analyze_csv_costs(data, intent):
         res += pivot_cat.to_markdown(index=False, floatfmt=".2f") + "\n"
 
         res += f"\n*Grootste kostenposten binnen {cat_names}:*\n"
-        top = df_category.groupby('Description')['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
+        # Group by Description (astype str voor zekerheid in groupby display)
+        top = df_category.groupby(df_category['Description'].astype(str))['AmountDC_num'].sum().sort_values(ascending=False).head(5).reset_index()
         res += top.to_markdown(index=False, floatfmt=".2f")
 
     return res
