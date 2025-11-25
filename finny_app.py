@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import os
-# import fitz  # PyMuPDF - Uncomment als je PDF parsing lokaal hebt draaien
 import re
 
 # ==========================================
@@ -9,29 +8,30 @@ import re
 # ==========================================
 st.set_page_config(page_title="Finny Demo", page_icon="💰", layout="wide")
 
-# Pad naar logo (pas aan als het pad anders is in jouw omgeving)
+# Pad naar logo
 LOGO_PATH = "finny_logo.png"
 
-# Initialiseer Session State variabelen als ze nog niet bestaan
+# Initialiseer Session State variabelen
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hoi! Ik ben Finny. Wat wil je weten over je cijfers?"}]
 if "conversations" not in st.session_state:
-    st.session_state.conversations = []  # Lijst van eerdere gesprekken
+    st.session_state.conversations = []
 if "client_profile" not in st.session_state:
     st.session_state.client_profile = {}
 if "current_view" not in st.session_state:
     st.session_state.current_view = "Chat"
 if "fact_cache" not in st.session_state:
-    st.session_state.fact_cache = {}  # Stap 3 voorbereiding: (metric, year) -> value
+    st.session_state.fact_cache = {}
 
 # ==========================================
-# 2. DATA LOADING (ROBUUST GEMAAKT)
+# 2. DATA LOADING (MET ENCODING FIX)
 # ==========================================
 @st.cache_data
 def load_data():
     """
     Laadt de CSV-bestanden in DataFrames.
-    Gebruikt error handling om crashes te voorkomen bij ontbrekende files.
+    Bevat een fix voor UnicodeDecodeError door te proberen met 'latin1'
+    als standaard 'utf-8' faalt.
     """
     data_files = {
         "trans": "Finny_Transactions.csv",
@@ -42,23 +42,33 @@ def load_data():
     dfs = {}
     
     for key, filename in data_files.items():
-        try:
-            if os.path.exists(filename):
-                # engine='python' helpt vaak bij separator issues, sep=None laat pandas gokken (, of ;)
+        # Begin met een lege DataFrame voor veiligheid
+        dfs[key] = pd.DataFrame()
+        
+        if os.path.exists(filename):
+            try:
+                # POGING 1: Probeer standaard UTF-8
+                # sep=None en engine='python' zorgen dat hij zelf zoekt naar ; of ,
                 dfs[key] = pd.read_csv(filename, sep=None, engine='python')
-                
-                # Normaliseer kolomnamen naar lowercase en strip spaties voor veiligheid
+            except UnicodeDecodeError:
+                try:
+                    # POGING 2: Probeer Latin-1 (voor Excel files met ë, é, €)
+                    dfs[key] = pd.read_csv(filename, sep=None, engine='python', encoding='latin1')
+                except Exception as e:
+                    st.error(f"Kon {filename} niet lezen met Latin-1: {e}")
+            except Exception as e:
+                st.error(f"Fout bij laden {filename}: {e}")
+
+            # Als laden gelukt is, normaliseer kolomnamen
+            if not dfs[key].empty:
                 dfs[key].columns = dfs[key].columns.str.strip().str.lower()
-            else:
-                st.warning(f"Bestand niet gevonden: {filename}. Functionaliteit kan beperkt zijn.")
-                dfs[key] = pd.DataFrame()
-        except Exception as e:
-            st.error(f"Fout bij laden {filename}: {e}")
-            dfs[key] = pd.DataFrame()
+        else:
+            # Bestand bestaat niet, geef waarschuwing maar crash niet
+            st.warning(f"Bestand niet gevonden: {filename}. Functionaliteit beperkt.")
             
     return dfs["trans"], dfs["syn"], dfs["rgs"]
 
-# Laad de data
+# Laad de data direct bij start
 df_trans, df_syn, df_rgs = load_data()
 
 # ==========================================
@@ -68,8 +78,10 @@ df_trans, df_syn, df_rgs = load_data()
 def get_column_flexible(df, candidates):
     """
     Zoekt in de dataframe kolommen naar een match uit de kandidatenlijst.
-    Dit voorkomt KeyError als de kolom 'Keyword' ineens 'Synoniem' heet.
+    Voorkomt KeyError als de kolomnaam net anders is.
     """
+    if df.empty:
+        return None
     for col in df.columns:
         if col in candidates:
             return col
@@ -78,36 +90,34 @@ def get_column_flexible(df, candidates):
 def determine_intent(user_input, df_syn):
     """
     Bepaalt of de vraag over PDF (jaarrekening) of CSV (transacties) gaat.
-    Fix: Robuuste kolom-check om KeyError te voorkomen.
+    Robuust gemaakt tegen ontbrekende kolommen.
     """
     user_input_lower = user_input.lower()
-    
-    # Default intent
-    intent = "PDF" 
+    intent = "PDF" # Default
     category_found = None
     
     if df_syn.empty:
         return intent, category_found
 
-    # 1. Zoek de relevante kolomnamen (want die kunnen variëren in de CSV)
-    # We zoeken naar kolommen als: keyword, synoniem, trefwoord, term
+    # Zoek flexibel naar de kolomnamen
     keyword_col = get_column_flexible(df_syn, ['keyword', 'synoniem', 'synonym', 'trefwoord', 'term'])
     category_col = get_column_flexible(df_syn, ['category', 'categorie', 'rubriek', 'finny_category'])
 
-    # Als we geen keyword kolom kunnen vinden, vallen we terug op PDF (veiligheid)
+    # Als we geen kolom hebben om in te zoeken, stop dan veilig
     if not keyword_col:
-        # Optioneel: print warning in console, niet in UI om gebruiker niet te storen
-        print("Warning: Geen keyword-kolom gevonden in synonymen file.")
         return "PDF", None
 
-    # 2. Loop door de synoniemen
+    # Loop door synoniemen
     for _, row in df_syn.iterrows():
-        # Veilig converteren naar string en lowercase
-        keyword = str(row[keyword_col]).lower().strip()
-        
+        val = row[keyword_col]
+        # Check of waarde niet leeg/NaN is
+        if pd.isna(val):
+            continue
+            
+        keyword = str(val).lower().strip()
         if keyword and keyword in user_input_lower:
             intent = "CSV"
-            if category_col:
+            if category_col and not pd.isna(row[category_col]):
                 category_found = row[category_col]
             break
             
@@ -120,40 +130,46 @@ def calculate_csv_answer(year, category, df_trans):
     if df_trans.empty:
         return "Ik heb geen transactiedata geladen."
 
-    # Zorg dat datum kolom herkend wordt (zoek naar 'date', 'datum', of eerste kolom)
+    # Flexibele kolomnamen
     date_col = get_column_flexible(df_trans, ['date', 'datum', 'transactiedatum'])
     amount_col = get_column_flexible(df_trans, ['amount', 'bedrag', 'waarde'])
     cat_col = get_column_flexible(df_trans, ['category', 'categorie', 'grootboek', 'rubriek'])
 
     if not (date_col and amount_col):
-        return "Ik kan de datum of bedrag kolommen niet vinden in de transacties."
+        return "Ik mis essentiële kolommen (datum/bedrag) in de transacties."
 
     # Filter op jaar
-    # We nemen aan dat datum strings zijn of datetime objects.
     try:
-        # Converteer voor zekerheid naar datetime
-        df_trans['temp_date'] = pd.to_datetime(df_trans[date_col], errors='coerce')
-        df_filtered = df_trans[df_trans['temp_date'].dt.year == int(year)]
+        # Probeer datum te parsen
+        temp_dates = pd.to_datetime(df_trans[date_col], errors='coerce')
+        # Filter rijen waar jaar klopt
+        df_filtered = df_trans[temp_dates.dt.year == int(year)]
     except:
-        # Fallback als datums niet parsen: string match op jaar
+        # Fallback: string match
         df_filtered = df_trans[df_trans[date_col].astype(str).str.contains(str(year), na=False)]
 
     if df_filtered.empty:
-        return f"Ik heb geen transacties gevonden voor {year}."
+        return f"Ik heb geen transacties gevonden voor het jaar {year}."
 
-    # Filter op categorie (indien bekend en kolom bestaat)
+    # Filter op categorie
     if category and cat_col:
-        # Simpele case-insensitive match
         df_filtered = df_filtered[df_filtered[cat_col].astype(str).str.lower() == str(category).lower()]
     
-    # Bereken som
-    total = df_filtered[amount_col].sum()
+    # Bereken som (zorg dat bedrag numeriek is)
+    try:
+        # Vervang eventuele komma's door punten als het strings zijn
+        if df_filtered[amount_col].dtype == object:
+            df_filtered[amount_col] = df_filtered[amount_col].str.replace(',', '.', regex=False)
+        
+        total = pd.to_numeric(df_filtered[amount_col], errors='coerce').sum()
+    except Exception:
+        total = 0
+
     return f"De totale {category if category else 'kosten'} in {year} bedragen € {total:,.2f}."
 
 def get_pdf_answer_mock(user_input):
     """
-    Simuleert de PDF antwoorden voor de stabiliteitstest.
-    Vervang dit met je echte 'query_engine' of PDF-logica.
+    Placeholder voor PDF logica om stabiliteit te testen.
     """
     user_input_lower = user_input.lower()
     if "winst" in user_input_lower:
@@ -167,8 +183,8 @@ def get_pdf_answer_mock(user_input):
     return "Dat kan ik niet direct in de PDF vinden (Demo modus)."
 
 def handle_user_input(user_input):
-    # 1. Bepaal jaar (simpele extractie)
-    year = "2024" # Default
+    # 1. Bepaal jaar
+    year = "2024" 
     years = re.findall(r'202[2-4]', user_input)
     if years:
         year = years[0]
@@ -177,19 +193,15 @@ def handle_user_input(user_input):
     intent, category = determine_intent(user_input, df_syn)
     
     # 3. Genereer antwoord
-    response = ""
-    
     if intent == "CSV":
         response = calculate_csv_answer(year, category, df_trans)
     else:
-        # Hier roep je normaal je PDF/RAG functie aan
         response = get_pdf_answer_mock(user_input)
 
     return response
 
 def save_current_conversation():
-    """Slaat huidige berichten op in historie en wist chat."""
-    if len(st.session_state.messages) > 1: # Alleen als er echt gepraat is
+    if len(st.session_state.messages) > 1:
         summary = st.session_state.messages[-1]['content'][:50] + "..."
         st.session_state.conversations.append({
             "id": len(st.session_state.conversations) + 1,
@@ -207,22 +219,23 @@ with st.sidebar:
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=150)
     else:
-        st.title("Finny") # Fallback als plaatje mist
+        st.title("Finny")
     
     st.markdown("---")
     
     # MENU
     menu_choice = st.radio("Menu", ["Chat", "Kennismaking", "Eerdere gesprekken", "Deel met accountant"])
     
-    # UPDATE VIEW STATE
     if menu_choice != st.session_state.current_view:
         st.session_state.current_view = menu_choice
         st.rerun()
         
     st.markdown("---")
-    st.info(f"Geheugen: [2022, 2023, 2024]\nData status: {'🟢' if not df_trans.empty else '🔴'}")
+    
+    # Status indicator
+    data_loaded = not df_trans.empty
+    st.info(f"Geheugen: [2022, 2023, 2024]\nData status: {'🟢' if data_loaded else '🔴'}")
 
-    # Nieuw gesprek knop (alleen in chat view relevant, maar mag altijd)
     if st.button("Nieuw gesprek"):
         save_current_conversation()
         st.rerun()
@@ -231,32 +244,27 @@ with st.sidebar:
 # 5. MAIN VIEWS
 # ==========================================
 
-# --- VIEW: CHAT ---
+# --- CHAT ---
 if st.session_state.current_view == "Chat":
     st.title("Finny Demo - Chat")
 
-    # Toon historie
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Input
     if prompt := st.chat_input("Stel je vraag over je cijfers..."):
-        # User message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Assistant logic
         with st.spinner("Finny denkt na..."):
             answer = handle_user_input(prompt)
         
-        # Assistant message
         st.session_state.messages.append({"role": "assistant", "content": answer})
         with st.chat_message("assistant"):
             st.markdown(answer)
 
-# --- VIEW: KENNISMAKING ---
+# --- KENNISMAKING ---
 elif st.session_state.current_view == "Kennismaking":
     st.title("Kennismaking")
     st.write("Vertel ons iets meer over je bedrijf.")
@@ -266,8 +274,7 @@ elif st.session_state.current_view == "Kennismaking":
         risk_appetite = st.slider("Risicobereidheid", 0, 10, value=st.session_state.client_profile.get("risk", 5))
         sector = st.selectbox("Sector", ["IT", "Bouw", "Horeca", "Overig"], index=0)
         
-        submitted = st.form_submit_button("Opslaan")
-        if submitted:
+        if st.form_submit_button("Opslaan"):
             st.session_state.client_profile = {
                 "name": comp_name,
                 "risk": risk_appetite,
@@ -275,7 +282,7 @@ elif st.session_state.current_view == "Kennismaking":
             }
             st.success("Profiel opgeslagen!")
 
-# --- VIEW: EERDERE GESPREKKEN ---
+# --- EERDERE GESPREKKEN ---
 elif st.session_state.current_view == "Eerdere gesprekken":
     st.title("Eerdere gesprekken")
     if not st.session_state.conversations:
@@ -287,19 +294,15 @@ elif st.session_state.current_view == "Eerdere gesprekken":
                 for m in conv['messages']:
                     st.write(f"**{m['role']}**: {m['content']}")
 
-# --- VIEW: DEEL MET ACCOUNTANT ---
+# --- DEEL MET ACCOUNTANT ---
 elif st.session_state.current_view == "Deel met accountant":
     st.title("Deel met accountant")
-    st.write("Selecteer gesprekken die je wilt delen.")
-    
     if not st.session_state.conversations:
         st.write("Geen gesprekken om te delen.")
     else:
         for i, conv in enumerate(st.session_state.conversations):
             col1, col2 = st.columns([0.1, 0.9])
             with col1:
-                # Checkbox state koppelen aan interne data zou netter zijn, 
-                # maar voor nu puur UI stabiliteit.
                 checked = st.checkbox("", key=f"chk_{i}", value=conv["shared_with_accountant"])
                 if checked != conv["shared_with_accountant"]:
                     conv["shared_with_accountant"] = checked
