@@ -10,9 +10,14 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 # ==========================================
-# 1. CONFIGURATIE & STATE
+# 0. SETUP & LOGO DETECTIE
 # ==========================================
-st.set_page_config(page_title="Finny Demo", page_icon="💰", layout="wide")
+# We zoeken het logo EERST, zodat we het in de page_config kunnen zetten
+logo_files = glob.glob("finny_logo.png") + glob.glob("*.png") + glob.glob("*.jpg")
+# Voorkeur voor 'finny_logo.png', anders de eerste gevonden afbeelding, anders emoji
+main_logo = "finny_logo.png" if os.path.exists("finny_logo.png") else (logo_files[0] if logo_files else "💰")
+
+st.set_page_config(page_title="Finny Demo", page_icon=main_logo, layout="wide")
 load_dotenv()
 
 AVAILABLE_YEARS = [2022, 2023, 2024]
@@ -62,11 +67,10 @@ def start_new_conversation():
     st.session_state.current_view = "chat"
 
 # ==========================================
-# 2. DATA LADEN (NU OOK MET PROFIEL.TXT)
+# 2. DATA LADEN
 # ==========================================
 @st.cache_data(ttl=3600)
 def load_data():
-    # We voegen 'company_context' toe aan de data dictionary
     data = {"syn": None, "trans": None, "rgs": None, "pdf_text": "", "company_context": "", "latest_year": 2024}
 
     def clean_code(val):
@@ -119,7 +123,6 @@ def load_data():
         except: pass
 
     # E. BEDRIJFSPROFIEL (TXT)
-    # Dit laadt bestanden zoals 'van_hattem_advies_profiel.txt'
     txt_files = glob.glob("*profiel*.txt") + glob.glob("*profile*.txt")
     for txt in txt_files:
         try:
@@ -127,7 +130,6 @@ def load_data():
                 content = f.read()
                 data["company_context"] += f"\n--- PROFIEL INFORMATIE ({txt}) ---\n{content}\n"
         except UnicodeDecodeError:
-            # Fallback voor als het bestand in Windows kladblok is gemaakt (ANSI)
             try:
                 with open(txt, "r", encoding="latin1") as f:
                     content = f.read()
@@ -283,8 +285,8 @@ if check_password():
     
     # --- SIDEBAR & MENU ---
     with st.sidebar:
-        logo_files = glob.glob("*.png") + glob.glob("*.jpg")
-        if logo_files: st.image(logo_files[0], width=150)
+        if os.path.exists(main_logo):
+            st.image(main_logo, width=150)
         st.title("Finny Demo")
 
         if data["trans"] is not None:
@@ -337,18 +339,26 @@ if check_password():
     if view == "chat":
         st.title("Finny Demo")
         
+        # Bepaal Avatars
+        finny_avatar = main_logo if os.path.exists(main_logo) else "🤖"
+        user_avatar = st.session_state.client_profile.get("avatar") # Kan None zijn, dan default
+
         active = st.session_state.get("active_years", [])
         if any(y not in AVAILABLE_YEARS for y in active):
             st.warning(f"Let op: In deze demo zijn alleen de jaren {AVAILABLE_YEARS} beschikbaar.")
 
         for msg in st.session_state.messages: 
-            st.chat_message(msg["role"]).write(msg["content"])
+            # Toon juiste avatar per rol
+            avatar = finny_avatar if msg["role"] == "assistant" else (user_avatar if user_avatar else "👤")
+            st.chat_message(msg["role"], avatar=avatar).write(msg["content"])
 
         if prompt := st.chat_input("Vraag Finny..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
-            st.chat_message("user").write(prompt)
+            # Toon user bericht direct met avatar
+            user_av_show = user_avatar if user_avatar else "👤"
+            st.chat_message("user", avatar=user_av_show).write(prompt)
             
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar=finny_avatar):
                 with st.spinner("Finny denkt na..."):
                     # 1. Router
                     intent = get_intent(client, prompt)
@@ -367,7 +377,6 @@ if check_password():
                     profile = st.session_state.client_profile or {}
                     finance_level = profile.get("finance_knowledge", 3)
                     
-                    # Hier combineren we de harde TXT data met het profiel
                     company_data_text = data["company_context"] if data["company_context"] else "Geen specifiek bedrijfsprofiel bestand gevonden."
 
                     system_prompt_finny = f"""
@@ -379,8 +388,7 @@ if check_password():
                     
                     INSTRUCTIES:
                     1. Gebruik de BEDRIJFSINFORMATIE om boekhoudtermen te vertalen naar de werkelijkheid van de klant.
-                       - Voorbeeld: Als de jaarrekening spreekt over 'Verkoop goederen', maar het bedrijf is een ADVIESBUREAU, noem het dan 'Omzet uit adviesdiensten' en leg uit dat dit de boekhoudkundige post is.
-                       - Wees specifiek over de bedrijfsactiviteiten als je context geeft.
+                       - Voorbeeld: Als de jaarrekening spreekt over 'Verkoop goederen', maar het bedrijf is een ADVIESBUREAU, noem het dan 'Omzet uit adviesdiensten'.
                     
                     2. Pas je niveau aan op de gebruiker (Kennisniveau: {finance_level}/5):
                        - { 'Jip-en-Janneke taal, leg termen uit.' if finance_level < 3 else 'Gebruik vaktermen, wees zakelijk.' }
@@ -408,6 +416,17 @@ if check_password():
         
         current_profile = st.session_state.client_profile or {}
         
+        # PROFIELFOTO UPLOAD
+        st.subheader("Jouw Foto")
+        uploaded_file = st.file_uploader("Upload een profielfoto (optioneel)", type=["jpg", "png", "jpeg"])
+        if uploaded_file is not None:
+            # We slaan de afbeelding direct op in de sessie zodat we hem niet kwijtraken bij form submit
+            current_profile["avatar"] = uploaded_file
+            st.session_state.client_profile["avatar"] = uploaded_file
+            st.image(uploaded_file, width=100, caption="Jouw avatar")
+        elif current_profile.get("avatar"):
+             st.image(current_profile["avatar"], width=100, caption="Huidige avatar")
+
         with st.form("intro_form"):
             st.subheader("Jouw kennisniveau")
             know_fin = st.slider("Kennis van financiën", 1, 5, current_profile.get("finance_knowledge", 2))
@@ -419,15 +438,19 @@ if check_password():
             focus = st.text_area("Waar wil je dat Finny vooral bij helpt?", value=current_profile.get("focus_areas", ""))
             
             if st.form_submit_button("Profiel opslaan"):
+                # We behouden de avatar die buiten de form is geupload
+                avatar_keep = st.session_state.client_profile.get("avatar")
+                
                 st.session_state.client_profile = {
                     "finance_knowledge": know_fin,
                     "tax_knowledge": know_tax,
                     "bookkeeping_knowledge": know_book,
                     "risk_preference": risk,
                     "focus_areas": focus,
-                    "avoid_topics": ""
+                    "avoid_topics": "",
+                    "avatar": avatar_keep
                 }
-                st.success("Profiel opgeslagen! Finny gebruikt dit nu in de gesprekken.")
+                st.success("Profiel opgeslagen! Je ziet je foto nu terug in de chat.")
                 st.rerun()
         
         if st.session_state.client_profile:
@@ -442,11 +465,14 @@ if check_password():
         if not st.session_state.conversations:
             st.info("Nog geen gesprekken opgeslagen.")
         else:
+            finny_avatar = main_logo if os.path.exists(main_logo) else "🤖"
+            user_avatar = st.session_state.client_profile.get("avatar")
+            
             for i, conv in enumerate(reversed(st.session_state.conversations)):
                 with st.expander(f"{conv['timestamp'].strftime('%d-%m %H:%M')} - {conv['title']}"):
                     for msg in conv['messages']:
-                        role_label = "Gebruiker" if msg['role'] == "user" else "Finny"
-                        st.markdown(f"**{role_label}:** {msg['content']}")
+                        av = finny_avatar if msg['role'] == 'assistant' else (user_avatar if user_avatar else "👤")
+                        st.chat_message(msg['role'], avatar=av).write(msg['content'])
 
     # VIEW: SHARE
     elif view == "share":
