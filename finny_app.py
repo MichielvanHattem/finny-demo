@@ -396,6 +396,13 @@ if check_password():
                     if source == "CSV":
                         missing_cat = not intent.get("keywords")
 
+                    # bepaal een geschikt voorbeeldjaar
+                    latest_year = data.get("latest_year", None)
+                    if latest_year is not None and (latest_year in AVAILABLE_YEARS):
+                        suggest_year = latest_year
+                    else:
+                        suggest_year = max(AVAILABLE_YEARS)
+
                     # als informatie ontbreekt: stel een vervolgvraag
                     if missing_year or (source == "CSV" and missing_cat):
                         reply_lines = ["Om je goed te helpen heb ik nog wat informatie nodig:"]
@@ -411,15 +418,14 @@ if check_password():
                             reply_lines.append(
                                 "Over welke soort kosten of categorie gaat je vraag precies?"
                             )
-                        latest_year = data.get("latest_year", None)
                         hints = []
-                        if missing_year and latest_year:
+                        if missing_year and suggest_year:
                             hints.append(
-                                f"– Bijvoorbeeld: 'Wat was mijn winst in {latest_year}?'"
+                                f"– Bijvoorbeeld: 'Wat was mijn winst in {suggest_year}?'"
                             )
                             if source == "CSV":
                                 hints.append(
-                                    f"– Of: 'Hoeveel autokosten had ik in {latest_year}?'"
+                                    f"– Of: 'Hoeveel autokosten had ik in {suggest_year}?'"
                                 )
                         if source == "CSV" and missing_cat:
                             hints.append(
