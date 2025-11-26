@@ -387,58 +387,64 @@ if check_password():
                     context = None
                     caption_txt = None
 
+                    # bepaal of jaartal en categorie ontbreken
+                    user_years = intent.get("years", [])
+                    missing_year = (not user_years) or (
+                        set(user_years) == set(AVAILABLE_YEARS)
+                    )
+                    missing_cat = False
                     if source == "CSV":
-                        user_years = intent.get("years", [])
-                        missing_year = (not user_years) or (
-                            set(user_years) == set(AVAILABLE_YEARS)
-                        )
                         missing_cat = not intent.get("keywords")
-                        if missing_year or missing_cat:
-                            reply_lines = ["Om je goed te helpen heb ik nog wat informatie nodig:"]
-                            if missing_year and missing_cat:
-                                reply_lines.append(
-                                    "Voor welke periode en over welke soort kosten gaat je vraag precies?"
-                                )
-                            elif missing_year:
-                                reply_lines.append(
-                                    "Voor welke periode bedoel je dit precies?"
-                                )
-                            else:
-                                reply_lines.append(
-                                    "Over welke soort kosten of categorie gaat je vraag precies?"
-                                )
-                            latest_year = data.get("latest_year", None)
-                            hints = []
-                            if missing_year and latest_year:
-                                hints.append(
-                                    f"– Bijvoorbeeld: 'Wat was mijn winst in {latest_year}?'"
-                                )
+
+                    # als informatie ontbreekt: stel een vervolgvraag
+                    if missing_year or (source == "CSV" and missing_cat):
+                        reply_lines = ["Om je goed te helpen heb ik nog wat informatie nodig:"]
+                        if source == "CSV" and missing_year and missing_cat:
+                            reply_lines.append(
+                                "Voor welke periode en over welke soort kosten gaat je vraag precies?"
+                            )
+                        elif missing_year:
+                            reply_lines.append(
+                                "Voor welke periode bedoel je dit precies?"
+                            )
+                        else:  # alleen categorie ontbreekt
+                            reply_lines.append(
+                                "Over welke soort kosten of categorie gaat je vraag precies?"
+                            )
+                        latest_year = data.get("latest_year", None)
+                        hints = []
+                        if missing_year and latest_year:
+                            hints.append(
+                                f"– Bijvoorbeeld: 'Wat was mijn winst in {latest_year}?'"
+                            )
+                            if source == "CSV":
                                 hints.append(
                                     f"– Of: 'Hoeveel autokosten had ik in {latest_year}?'"
                                 )
-                            if missing_cat:
-                                hints.append(
-                                    "– Bijvoorbeeld: autokosten, telefoonkosten, huisvesting of personeel."
-                                )
-                            if hints:
-                                reply_lines.append("")
-                                reply_lines.extend(hints)
-                            reply = "\n".join(reply_lines)
-                            st.write(reply)
-                            st.session_state.messages.append(
-                                {"role": "assistant", "content": reply}
+                        if source == "CSV" and missing_cat:
+                            hints.append(
+                                "– Bijvoorbeeld: autokosten, telefoonkosten, huisvesting of personeel."
                             )
-                            # context blijft None -> rest van de beantwoording wordt overgeslagen
-                        else:
+                        if hints:
+                            reply_lines.append("")
+                            reply_lines.extend(hints)
+                        reply = "\n".join(reply_lines)
+                        st.write(reply)
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": reply}
+                        )
+                    else:
+                        # informatie compleet: bouw context
+                        if source == "CSV":
                             context = analyze_csv_costs(data, intent)
                             caption_txt = f"Bron: Transacties (Details) | Zoektermen: {intent.get('keywords')}"
-                    else:
-                        context = data["pdf_text"]
-                        caption_txt = (
-                            f"Bron: Jaarrekening (Trends) | Jaren: {intent.get('years')}"
-                        )
+                        else:
+                            context = data["pdf_text"]
+                            caption_txt = (
+                                f"Bron: Jaarrekening (Trends) | Jaren: {intent.get('years')}"
+                            )
 
-                    # Alleen verder gaan als er context is
+                    # Alleen verder gaan als er context is (dus geen vraag nodig)
                     if context:
                         st.caption(caption_txt)
                         profile = st.session_state.client_profile
