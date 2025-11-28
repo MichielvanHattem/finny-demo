@@ -155,22 +155,23 @@ def load_data():
     return data
 
 # ==========================================
-# 3. ROUTER & LOGIC
+# 3. ROUTER & LOGIC (SLIMMER GEMAAKT)
 # ==========================================
 
 def get_intent(client, question, data):
     """
     Bepaalt:
     - source: 'PDF' of 'CSV'
-    - years: lijst met jaren (kan leeg zijn als niet relevant)
-    - keywords: zoekwoorden voor CSV
+    - scope: 'specific' (zoekwoorden), 'total' (alles optellen), 'general' (uitleg)
+    - years: lijst met jaren
+    - keywords: zoekwoorden voor CSV (alleen als scope specific is)
     - needs_year: of een concreet jaar echt nodig is
     - year_mode: 'single' | 'multi' | 'none'
     """
     q_lower = question.lower()
     context_years = st.session_state.get("active_years", AVAILABLE_YEARS)
 
-    # 1. CHECK SYNONIEMEN (CSV-signalen)
+    # 1. CHECK SYNONIEMEN (Directe CSV match = Altijd Specific)
     csv_keywords = []
     if (
         data["syn"] is not None
@@ -182,48 +183,36 @@ def get_intent(client, question, data):
             if syn in q_lower and len(syn) > 2:
                 csv_keywords.append(syn)
 
-    # Als we duidelijke CSV-synoniemen hebben én de vraag geen trend/vergelijking is,
-    # dan gaan we direct naar CSV met single-year focus.
     if csv_keywords:
+        # Als er concrete synoniemen zijn, is het een specifieke vraag
         if not any(
             x in q_lower for x in ["waarom", "hoe komt", "oorzaak", "verloop", "vergelijk"]
         ):
             return {
                 "source": "CSV",
+                "scope": "specific",
                 "keywords": csv_keywords,
                 "years": context_years,
                 "needs_year": True,
                 "year_mode": "single",
             }
 
-    # 2. CHECK PDF SIGNALEN (trends, verloop, vergelijkingen)
+    # 2. CHECK PDF SIGNALEN (Trends/Verloop = General/Multi)
     TREND_TERMS = [
-        "stijgen",
-        "dalen",
-        "toenemen",
-        "afnemen",
-        "waarom",
-        "hoe komt",
-        "oorzaak",
-        "verloop",
-        "trend",
-        "verschil",
-        "vergelijk",
-        "winst",
-        "omzet",
-        "resultaat",
-        "balans",
+        "stijgen", "dalen", "toenemen", "afnemen", "waarom", "hoe komt",
+        "oorzaak", "verloop", "trend", "verschil", "vergelijk", "ontwikkeling"
     ]
     if any(t in q_lower for t in TREND_TERMS):
         return {
             "source": "PDF",
+            "scope": "general",
             "keywords": [],
             "years": context_years,
-            "needs_year": False,   # trends mogen multi-year zijn
+            "needs_year": False, 
             "year_mode": "multi",
         }
 
-    # 3. LLM FALLBACK – laat model bron én jaarlogica bepalen
+    # 3. LLM FALLBACK – INTELLIGENTE ROUTER
     try:
         res = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -231,38 +220,28 @@ def get_intent(client, question, data):
                 {
                     "role": "system",
                     "content": """
-Je bent een router voor Finny. Je taak:
+Je bent een router voor Finny. Analyseer de vraag van de ondernemer.
 
-1. Bepaal de bron:
-   - 'PDF' voor vragen over jaarrekening, trends, ontwikkeling, vergelijking.
-   - 'CSV' voor vragen over specifieke kostenposten of transacties.
+Bepaal de volgende velden (JSON output):
 
-2. Bepaal of een JAAR nodig is:
-   - "needs_year": true als een concreet cijfer alleen correct is als je weet voor WELK jaar.
-   - Voor algemene vragen ("Wat is Finny?", "Hoe werkt dit?") is "needs_year": false.
+1. "source": 
+   - 'PDF' voor vragen over trends, algemene balansposten, winst/verlies uitleg.
+   - 'CSV' voor vragen over kosten, uitgaven, bedragen of transacties.
 
-3. Bepaal de JAAR-MODE:
-   - "single": één jaar is nodig (bijv. "Wat was mijn winst?" zonder jaar).
-   - "multi": de vraag gaat over verloop of vergelijking over meerdere jaren
-              (bijv. "Wat is het verloop van mijn winst?", "Vergelijk mijn kosten per jaar").
-   - "none": jaar speelt geen rol (uitleg, productinfo, algemene tips).
+2. "scope": (BELANGRIJK)
+   - 'specific': De gebruiker zoekt een SPECIFIEKE post (bijv. "autokosten", "huur", "telefoon").
+   - 'total': De gebruiker vraagt naar het TOTAAL of ALLES (bijv. "wat zijn mijn kosten", "totale uitgaven", "hoeveel heb ik betaald").
+   - 'general': Voor algemene vragen (bijv. "hoe werkt dit", "uitleg", "hallo").
 
-4. Vul "years":
-   - Als de gebruiker expliciet een jaar noemt (bijv. 2023), zet dat jaar in de lijst.
-   - Bij "multi" mag je jaren leeg laten of een range geven (bijv. [2022, 2023, 2024]).
-   - Als jaar niet relevant is, laat "years" leeg.
+3. "keywords":
+   - Alleen invullen als scope = 'specific'. Geef de zelfstandige naamwoorden (bijv. ["auto", "brandstof"]).
+   - Laat leeg [] als scope = 'total' of 'general'.
 
-5. Vul "keywords":
-   - Alleen relevante zoekwoorden voor transacties (bijv. "auto", "telefoon", "huur").
+4. "needs_year": true/false (Is een specifiek jaartal nodig voor een correct antwoord?)
+5. "year_mode": 'single' (één jaar), 'multi' (verloop/trend), of 'none'.
+6. "years": Lijst met jaren als ze expliciet in de tekst staan (bijv. [2023]). Anders leeglaten.
 
-Geef ALLEEN JSON terug in deze vorm:
-{
-  "source": "PDF" | "CSV",
-  "years": [2023],
-  "keywords": ["auto"],
-  "needs_year": true,
-  "year_mode": "single" | "multi" | "none"
-}
+Geef ALLEEN JSON terug.
 """,
                 },
                 {"role": "user", "content": question},
@@ -271,19 +250,22 @@ Geef ALLEEN JSON terug in deze vorm:
         )
         intent = json.loads(res.choices[0].message.content)
 
-        # Fallback op context_years als years ontbreekt of leeg is
+        # Fallback waarden
         if not intent.get("years"):
             intent["years"] = context_years
         if "needs_year" not in intent:
             intent["needs_year"] = False
+        if "scope" not in intent:
+            intent["scope"] = "general"
         if "year_mode" not in intent:
             intent["year_mode"] = "none"
 
         return intent
     except Exception:
-        # Conservatief fallback: PDF, geen verplicht jaartal
+        # Conservatief fallback
         return {
             "source": "PDF",
+            "scope": "general",
             "keywords": [],
             "years": context_years,
             "needs_year": False,
@@ -293,12 +275,17 @@ Geef ALLEEN JSON terug in deze vorm:
 def analyze_csv_costs(data, intent):
     if data["trans"] is None:
         return "Geen transacties beschikbaar."
+    
     df = data["trans"].copy()
     keywords = intent.get("keywords", [])
+    scope = intent.get("scope", "general") # specific vs total
     years = [str(y) for y in intent.get("years", AVAILABLE_YEARS)]
 
+    # 1. Filter op jaar
     if "Year_Clean" in df.columns:
         df = df[df["Year_Clean"].astype(str).isin(years)]
+    
+    # 2. Filter resultaat/balans weg (technisch)
     if "Description" in df.columns:
         df = df[
             ~df["Description"].astype(str).str.contains(
@@ -306,43 +293,54 @@ def analyze_csv_costs(data, intent):
             )
         ]
 
-    found_categories = set()
+    # 3. Filter op Keywords (ALLEEN als scope specific is)
     df_found = pd.DataFrame()
-
-    if keywords:
+    found_categories = set()
+    
+    if scope == "specific" and keywords:
+        # Zoek in omschrijvingen
         pat = "|".join([re.escape(k.lower()) for k in keywords])
         if "UniversalSearch" in df.columns:
             df_found = df[df["UniversalSearch"].astype(str).str.contains(pat, na=False)]
 
+        # Zoek in synoniemen
         if data["syn"] is not None:
             syn_df = data["syn"]
             for k in keywords:
                 matches = syn_df[syn_df["Synoniem_Clean"] == k]
                 if not matches.empty and "Categorie" in matches.columns:
                     found_categories.update(matches["Categorie"].dropna().unique())
+        
+        # Zoek in categorieën (GLDescription)
+        df_cat = pd.DataFrame()
+        if found_categories:
+            cat_pat = "|".join([re.escape(c) for c in found_categories])
+            if "Finny_GLDescription" in df.columns:
+                df_cat = df[
+                    df["Finny_GLDescription"].astype(str).str.contains(
+                        cat_pat, case=False, na=False
+                    )
+                ]
+        
+        # Combineer resultaten
+        df_total = pd.concat([df_found, df_cat]).drop_duplicates()
+        
+    else:
+        # Scope is 'total' (of general in csv context) -> Pak alles wat overblijft
+        df_total = df.copy()
 
-    df_cat = pd.DataFrame()
-    if found_categories:
-        cat_pat = "|".join([re.escape(c) for c in found_categories])
-        if "Finny_GLDescription" in df.columns:
-            df_cat = df[
-                df["Finny_GLDescription"].astype(str).str.contains(
-                    cat_pat, case=False, na=False
-                )
-            ]
-
-    df_total = pd.concat([df_found, df_cat]).drop_duplicates()
-
+    # Resultaat opbouwen
     if df_total.empty:
-        return (
-            f"Geen transacties gevonden voor: {keywords}. (Gecheckt in synoniemen en transacties)."
-        )
+        return f"Geen transacties gevonden."
 
     total = df_total["AmountDC_num"].sum() if "AmountDC_num" in df_total.columns else 0
 
     res = f"### DETAILS UIT TRANSACTIES ({', '.join(years)})\n"
     if found_categories:
         res += f"**Gevonden categorieën:** {', '.join(found_categories)}\n\n"
+    elif scope == "total":
+        res += "**Overzicht totale kosten/transacties:**\n\n"
+        
     res += f"**Totaalbedrag:** € {total:,.2f}\n\n"
 
     if "Description" in df_total.columns:
@@ -457,16 +455,15 @@ if check_password():
             st.chat_message("user", avatar=user_av).write(prompt)
             with st.chat_message("assistant", avatar=finny_av):
                 with st.spinner("..."):
+                    # 1. Intent & Scope bepalen
                     intent = get_intent(client, prompt, data)
                     source = intent.get("source", "PDF")
+                    scope = intent.get("scope", "general")
+                    
                     context = None
                     caption_txt = None
 
-                    # -----------------------------------------
-                    # SLIMMERE JAAR- EN CATEGORIE-LOGICA
-                    # -----------------------------------------
-
-                    # 1. expliciete jaartallen uit de vraag halen
+                    # 2. Expliciete jaren uit Regex halen (altijd leidend)
                     year_matches = re.findall(r"\b(20[0-9]{2})\b", prompt)
                     explicit_years = [
                         int(y) for y in year_matches if int(y) in AVAILABLE_YEARS
@@ -474,58 +471,46 @@ if check_password():
                     if explicit_years:
                         intent["years"] = explicit_years
 
+                    # 3. Checken op ontbrekende info
                     user_years = intent.get("years", [])
                     needs_year = bool(intent.get("needs_year", False))
                     year_mode = intent.get("year_mode", "none")
 
-                    # alleen een jaar "missen" als:
-                    # - jaar echt nodig is
-                    # - het om één specifiek jaar gaat
-                    # - en de gebruiker zelf geen expliciet jaar noemde
+                    # Check 1: Ontbrekend jaar? 
+                    # Alleen als: Jaar is nodig + Mode is Single + Geen jaar gevonden
                     missing_year = needs_year and (year_mode == "single") and (
                         not explicit_years
                     )
 
+                    # Check 2: Ontbrekende categorie?
+                    # Alleen als: Bron is CSV + Scope is SPECIFIC + Geen keywords
+                    # (Dus bij Scope='total' is missing_cat FALSE -> Grote verbetering!)
                     missing_cat = False
-                    if source == "CSV":
-                        missing_cat = not intent.get("keywords")
+                    if source == "CSV" and scope == "specific" and not intent.get("keywords"):
+                        missing_cat = True
 
-                    # bepaal een geschikt voorbeeldjaar
-                    latest_year = data.get("latest_year", None)
-                    if latest_year is not None and (latest_year in AVAILABLE_YEARS):
-                        suggest_year = latest_year
-                    else:
-                        suggest_year = max(AVAILABLE_YEARS)
+                    # Suggestie voor jaar (voor in de hulpstekst)
+                    latest_year = data.get("latest_year", 2024)
+                    suggest_year = latest_year if latest_year in AVAILABLE_YEARS else max(AVAILABLE_YEARS)
 
-                    # als informatie ontbreekt: stel een vervolgvraag
-                    if missing_year or (source == "CSV" and missing_cat):
+                    # 4. Actie: Vragen om info OF antwoord genereren
+                    if missing_year or missing_cat:
                         reply_lines = ["Om je goed te helpen heb ik nog wat informatie nodig:"]
-                        if source == "CSV" and missing_year and missing_cat:
-                            reply_lines.append(
-                                "Voor welke periode en over welke soort kosten gaat je vraag precies?"
-                            )
+                        
+                        if missing_year and missing_cat:
+                            reply_lines.append("Voor welk jaar en over welke kostenpost gaat dit precies?")
                         elif missing_year:
-                            reply_lines.append(
-                                "Voor welke periode bedoel je dit precies?"
-                            )
-                        else:  # alleen categorie ontbreekt
-                            reply_lines.append(
-                                "Over welke soort kosten of categorie gaat je vraag precies?"
-                            )
-
+                            reply_lines.append(f"Over welk jaar gaat je vraag? (Ik heb cijfers t/m {latest_year})")
+                        elif missing_cat:
+                            reply_lines.append("Over welke specifieke kosten of categorie gaat je vraag?")
+                        
+                        # Hints toevoegen
                         hints = []
-                        if missing_year and suggest_year:
-                            hints.append(
-                                f"– Bijvoorbeeld: 'Wat was mijn winst in {suggest_year}?'"
-                            )
-                            if source == "CSV":
-                                hints.append(
-                                    f"– Of: 'Hoeveel autokosten had ik in {suggest_year}?'"
-                                )
-                        if source == "CSV" and missing_cat:
-                            hints.append(
-                                "– Bijvoorbeeld: autokosten, telefoonkosten, huisvesting of personeel."
-                            )
+                        if missing_year:
+                            hints.append(f"– Bijvoorbeeld: 'in {suggest_year}'")
+                        if missing_cat:
+                            hints.append("– Bijvoorbeeld: 'autokosten', 'huisvesting' of 'personeel'")
+                        
                         if hints:
                             reply_lines.append("")
                             reply_lines.extend(hints)
@@ -536,45 +521,46 @@ if check_password():
                             {"role": "assistant", "content": reply}
                         )
                     else:
-                        # informatie compleet: bouw context
+                        # Info is compleet (of scope is 'total'/'general'), we gaan context bouwen
                         if source == "CSV":
                             context = analyze_csv_costs(data, intent)
-                            caption_txt = f"Bron: Transacties (Details) | Zoektermen: {intent.get('keywords')}"
+                            if scope == "total":
+                                caption_txt = f"Bron: CSV (Totaaloverzicht) | Jaren: {intent.get('years')}"
+                            else:
+                                caption_txt = f"Bron: CSV (Detail) | Zoektermen: {intent.get('keywords')}"
                         else:
                             context = data["pdf_text"]
                             caption_txt = (
                                 f"Bron: Jaarrekening (Trends) | Jaren: {intent.get('years')}"
                             )
 
-                    # Alleen verder gaan als er context is (dus geen vraag nodig)
+                    # 5. Genereren antwoord met context
                     if context:
                         st.caption(caption_txt)
                         profile = st.session_state.client_profile
                         fin_know = profile.get("finance_knowledge", 3)
-                        tone_instruction = (
-                            "Gebruik Jip-en-Janneke taal. Vermijd jargon zoals 'immateriële activa', zeg gewoon 'bezittingen'."
-                        )
+                        
+                        tone_instruction = "Gebruik Jip-en-Janneke taal. Vermijd jargon."
                         if fin_know >= 4:
-                            tone_instruction = (
-                                "Gebruik professionele financiële termen. Wees zakelijk."
-                            )
-                        company_info = (
-                            data["company_context"] or "Geen bedrijfsprofiel."
-                        )
+                            tone_instruction = "Gebruik professionele financiële termen. Wees zakelijk."
+                            
+                        company_info = data["company_context"] or "Geen bedrijfsprofiel."
+                        
                         system_prompt = f"""
-                        Je bent Finny. Je helpt ondernemers.
+                        Je bent Finny, een slimme financiële assistent.
 
                         BEDRIJFSPROFIEL:
                         {company_info}
 
-                        DATA (Gebruik dit!):
+                        GEVONDEN DATA:
                         {context}
 
-                        REGELS:
-                        1. TOON: {tone_instruction}
-                        2. FORMAT: Max 3-4 zinnen per antwoord. Gebruik bullets. KORT & BONDIG.
-                        3. DATA: Verzin nooit cijfers.
-                        4. EINDE: Eindig ALTIJD met een relevante vervolgvraag.
+                        JOUW OPDRACHT:
+                        1. Beantwoord de vraag op basis van de DATA.
+                        2. TOON: {tone_instruction}
+                        3. FORMAT: Max 3-4 zinnen. Gebruik bullets voor opsommingen.
+                        4. Geef concrete bedragen als die in de data staan. Verzin NOOIT cijfers.
+                        5. Eindig met een behulpzame vervolgvraag.
                         """
                         msgs = [{"role": "system", "content": system_prompt}]
                         for m in st.session_state.messages[-3:]:
