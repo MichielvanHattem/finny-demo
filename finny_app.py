@@ -82,6 +82,7 @@ def load_data():
         "company_context": "",
         "latest_year": 2024,
     }
+
     def clean_code(val):
         return str(val).split(".")[0].strip()
 
@@ -156,11 +157,20 @@ def load_data():
 # ==========================================
 # 3. ROUTER & LOGIC
 # ==========================================
+
 def get_intent(client, question, data):
+    """
+    Bepaalt:
+    - source: 'PDF' of 'CSV'
+    - years: lijst met jaren (kan leeg zijn als niet relevant)
+    - keywords: zoekwoorden voor CSV
+    - needs_year: of een concreet jaar echt nodig is
+    - year_mode: 'single' | 'multi' | 'none'
+    """
     q_lower = question.lower()
     context_years = st.session_state.get("active_years", AVAILABLE_YEARS)
 
-    # 1. CHECK SYNONIEMEN
+    # 1. CHECK SYNONIEMEN (CSV-signalen)
     csv_keywords = []
     if (
         data["syn"] is not None
@@ -172,13 +182,21 @@ def get_intent(client, question, data):
             if syn in q_lower and len(syn) > 2:
                 csv_keywords.append(syn)
 
+    # Als we duidelijke CSV-synoniemen hebben én de vraag geen trend/vergelijking is,
+    # dan gaan we direct naar CSV met single-year focus.
     if csv_keywords:
         if not any(
-            x in q_lower for x in ["waarom", "hoe komt", "oorzaak", "verloop"]
+            x in q_lower for x in ["waarom", "hoe komt", "oorzaak", "verloop", "vergelijk"]
         ):
-            return {"source": "CSV", "keywords": csv_keywords, "years": context_years}
+            return {
+                "source": "CSV",
+                "keywords": csv_keywords,
+                "years": context_years,
+                "needs_year": True,
+                "year_mode": "single",
+            }
 
-    # 2. CHECK PDF SIGNALEN
+    # 2. CHECK PDF SIGNALEN (trends, verloop, vergelijkingen)
     TREND_TERMS = [
         "stijgen",
         "dalen",
@@ -197,24 +215,80 @@ def get_intent(client, question, data):
         "balans",
     ]
     if any(t in q_lower for t in TREND_TERMS):
-        return {"source": "PDF", "keywords": [], "years": context_years}
+        return {
+            "source": "PDF",
+            "keywords": [],
+            "years": context_years,
+            "needs_year": False,   # trends mogen multi-year zijn
+            "year_mode": "multi",
+        }
 
-    # 3. LLM FALLBACK
+    # 3. LLM FALLBACK – laat model bron én jaarlogica bepalen
     try:
         res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "Je bent een router. Kies 'PDF' voor algemene vragen/trends. Kies 'CSV' voor specifieke transactievragen. Output JSON: {source: 'PDF'|'CSV', years: [], keywords: []}",
+                    "content": """
+Je bent een router voor Finny. Je taak:
+
+1. Bepaal de bron:
+   - 'PDF' voor vragen over jaarrekening, trends, ontwikkeling, vergelijking.
+   - 'CSV' voor vragen over specifieke kostenposten of transacties.
+
+2. Bepaal of een JAAR nodig is:
+   - "needs_year": true als een concreet cijfer alleen correct is als je weet voor WELK jaar.
+   - Voor algemene vragen ("Wat is Finny?", "Hoe werkt dit?") is "needs_year": false.
+
+3. Bepaal de JAAR-MODE:
+   - "single": één jaar is nodig (bijv. "Wat was mijn winst?" zonder jaar).
+   - "multi": de vraag gaat over verloop of vergelijking over meerdere jaren
+              (bijv. "Wat is het verloop van mijn winst?", "Vergelijk mijn kosten per jaar").
+   - "none": jaar speelt geen rol (uitleg, productinfo, algemene tips).
+
+4. Vul "years":
+   - Als de gebruiker expliciet een jaar noemt (bijv. 2023), zet dat jaar in de lijst.
+   - Bij "multi" mag je jaren leeg laten of een range geven (bijv. [2022, 2023, 2024]).
+   - Als jaar niet relevant is, laat "years" leeg.
+
+5. Vul "keywords":
+   - Alleen relevante zoekwoorden voor transacties (bijv. "auto", "telefoon", "huur").
+
+Geef ALLEEN JSON terug in deze vorm:
+{
+  "source": "PDF" | "CSV",
+  "years": [2023],
+  "keywords": ["auto"],
+  "needs_year": true,
+  "year_mode": "single" | "multi" | "none"
+}
+""",
                 },
                 {"role": "user", "content": question},
             ],
             response_format={"type": "json_object"},
         )
-        return json.loads(res.choices[0].message.content)
+        intent = json.loads(res.choices[0].message.content)
+
+        # Fallback op context_years als years ontbreekt of leeg is
+        if not intent.get("years"):
+            intent["years"] = context_years
+        if "needs_year" not in intent:
+            intent["needs_year"] = False
+        if "year_mode" not in intent:
+            intent["year_mode"] = "none"
+
+        return intent
     except Exception:
-        return {"source": "PDF", "keywords": [], "years": context_years}
+        # Conservatief fallback: PDF, geen verplicht jaartal
+        return {
+            "source": "PDF",
+            "keywords": [],
+            "years": context_years,
+            "needs_year": False,
+            "year_mode": "none",
+        }
 
 def analyze_csv_costs(data, intent):
     if data["trans"] is None:
@@ -371,6 +445,7 @@ if check_password():
         st.title("Finny Demo")
         finny_av = main_logo if os.path.exists(main_logo) else "🤖"
         user_av = st.session_state.client_profile.get("avatar") or "👤"
+
         for m in st.session_state.messages:
             st.chat_message(
                 m["role"],
@@ -387,11 +462,30 @@ if check_password():
                     context = None
                     caption_txt = None
 
-                    # bepaal of jaartal en categorie ontbreken
+                    # -----------------------------------------
+                    # SLIMMERE JAAR- EN CATEGORIE-LOGICA
+                    # -----------------------------------------
+
+                    # 1. expliciete jaartallen uit de vraag halen
+                    year_matches = re.findall(r"\b(20[0-9]{2})\b", prompt)
+                    explicit_years = [
+                        int(y) for y in year_matches if int(y) in AVAILABLE_YEARS
+                    ]
+                    if explicit_years:
+                        intent["years"] = explicit_years
+
                     user_years = intent.get("years", [])
-                    missing_year = (not user_years) or (
-                        set(user_years) == set(AVAILABLE_YEARS)
+                    needs_year = bool(intent.get("needs_year", False))
+                    year_mode = intent.get("year_mode", "none")
+
+                    # alleen een jaar "missen" als:
+                    # - jaar echt nodig is
+                    # - het om één specifiek jaar gaat
+                    # - en de gebruiker zelf geen expliciet jaar noemde
+                    missing_year = needs_year and (year_mode == "single") and (
+                        not explicit_years
                     )
+
                     missing_cat = False
                     if source == "CSV":
                         missing_cat = not intent.get("keywords")
@@ -418,6 +512,7 @@ if check_password():
                             reply_lines.append(
                                 "Over welke soort kosten of categorie gaat je vraag precies?"
                             )
+
                         hints = []
                         if missing_year and suggest_year:
                             hints.append(
@@ -434,6 +529,7 @@ if check_password():
                         if hints:
                             reply_lines.append("")
                             reply_lines.extend(hints)
+
                         reply = "\n".join(reply_lines)
                         st.write(reply)
                         st.session_state.messages.append(
