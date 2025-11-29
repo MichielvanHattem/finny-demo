@@ -67,6 +67,7 @@ def start_new_conversation() -> None:
             "shared_with_accountant": False,
         }
         st.session_state.conversations.append(new_conv)
+
     st.session_state.messages = []
     st.session_state["active_years"] = AVAILABLE_YEARS
     st.session_state.current_view = "chat"
@@ -384,16 +385,16 @@ if check_password():
 
     # SIDEBAR
     with st.sidebar:
-        # Finny logo / avatar
         if isinstance(main_logo, str) and os.path.exists(main_logo):
             st.image(main_logo, width=140)
+
         st.title("Finny Demo")
         st.caption(
             f"Beschikbare jaren: {', '.join(str(y) for y in st.session_state.get('active_years', AVAILABLE_YEARS))}"
         )
         st.markdown("---")
 
-        # Laat eventueel de klantfoto zien
+        # eventueel klantfoto tonen
         if st.session_state.user_avatar_path and os.path.exists(
             st.session_state.user_avatar_path
         ):
@@ -441,4 +442,153 @@ if check_password():
                 5,
                 int(prof.get("finance_knowledge", 2)),
             )
-            focus
+            focus_val = st.text_input(
+                "Belangrijkste focus (bijv. Kostenbesparing, Groei, Rust)",
+                prof.get("focus", ""),
+            )
+
+            uploaded_photo = st.file_uploader(
+                "Upload een foto of logo voor dit gesprek (optioneel)",
+                type=["png", "jpg", "jpeg"],
+            )
+
+            submit_profile = st.form_submit_button("Opslaan & naar chat")
+
+        if submit_profile:
+            prof.update({"finance_knowledge": kennis, "focus": focus_val})
+
+            if uploaded_photo is not None:
+                ext = os.path.splitext(uploaded_photo.name)[1].lower() or ".png"
+                avatar_path = f"user_avatar{ext}"
+                with open(avatar_path, "wb") as f:
+                    f.write(uploaded_photo.getbuffer())
+                st.session_state.user_avatar_path = avatar_path
+
+            st.session_state.client_profile = prof
+            st.session_state.current_view = "chat"
+            st.experimental_rerun()
+
+    # CHAT
+    elif view == "chat":
+        st.title("Finny Demo")
+        finny_avatar = main_logo if os.path.exists(main_logo) else "🤖"
+
+        if st.session_state.user_avatar_path and os.path.exists(
+            st.session_state.user_avatar_path
+        ):
+            user_avatar = st.session_state.user_avatar_path
+        else:
+            user_avatar = "👤"
+
+        # bestaande berichten tonen
+        for m in st.session_state.messages:
+            st.chat_message(
+                m["role"],
+                avatar=finny_avatar if m["role"] == "assistant" else user_avatar,
+            ).write(m["content"])
+
+        # nieuwe vraag
+        prompt = st.chat_input("Vraag Finny iets over je cijfers...")
+        if prompt:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            st.chat_message("user", avatar=user_avatar).write(prompt)
+
+            with st.chat_message("assistant", avatar=finny_avatar):
+                with st.spinner("Even rekenen..."):
+                    analysis = build_analysis(client, prompt, data)
+                    context = analysis["context"]
+                    source = analysis["source"]
+                    years = analysis["years"]
+                    intent = analysis["intent"]
+
+                    st.caption(
+                        f"Bron: {source} | Jaren: {', '.join(str(y) for y in years) or 'n.v.t.'}"
+                    )
+
+                    profile = st.session_state.client_profile
+                    fin_know = int(profile.get("finance_knowledge", 2))
+                    if fin_know <= 2:
+                        tone = (
+                            "Leg het uit in eenvoudige taal (Jip-en-Janneke). "
+                            "Geen moeilijke termen zoals 'EBITDA' zonder uitleg."
+                        )
+                    elif fin_know >= 4:
+                        tone = (
+                            "Gebruik professionele financiële termen en wees zakelijk en to-the-point."
+                        )
+                    else:
+                        tone = "Gebruik normale ondernemerstaal: concreet, zonder overdreven jargon."
+
+                    system_prompt = (
+                        "Je bent Finny, een financiële assistent voor ondernemers.\n\n"
+                        f"CONTEXT (FEITEN – gebruik dit als waarheid):\n{context}\n\n"
+                        f"INTENTIE: type={intent['type']}, term='{intent['term']}'.\n\n"
+                        "REGELS VOOR JE ANTWOORD:\n"
+                        "1. Geef een direct antwoord op de vraag, in maximaal 4 zinnen.\n"
+                        "2. Noem concrete bedragen als die in de context staan.\n"
+                        "3. Verzin NOOIT cijfers of jaartallen; als iets ontbreekt, zeg dat eerlijk.\n"
+                        "4. "
+                        + tone
+                        + "\n"
+                        "5. Sluit af met één korte vervolgvraag die logisch is voor de ondernemer.\n"
+                    )
+
+                    msgs = [{"role": "system", "content": system_prompt}]
+                    msgs.append({"role": "user", "content": prompt})
+
+                    try:
+                        resp = client.chat.completions.create(
+                            model="gpt-4o-mini", messages=msgs
+                        )
+                        reply = resp.choices[0].message.content
+                    except Exception as e:
+                        reply = f"Er ging iets mis bij het ophalen van het antwoord van het model: {e}"
+
+                    st.write(reply)
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": reply}
+                    )
+
+    # HISTORY
+    elif view == "history":
+        st.title("Gesprekken")
+        if not st.session_state.conversations:
+            st.info("Nog geen gesprekken opgeslagen. Start een nieuw gesprek in de chat.")
+        else:
+            for conv in reversed(st.session_state.conversations):
+                title = conv.get("title", "Gesprek")
+                ts = conv.get("timestamp")
+                label = (
+                    f"{ts.strftime('%d-%m %H:%M')} - {title}"
+                    if isinstance(ts, datetime)
+                    else title
+                )
+                with st.expander(label):
+                    for m in conv.get("messages", []):
+                        rol = m.get("role", "?")
+                        cont = m.get("content", "")
+                        st.write(f"**{rol}**: {cont}")
+
+    # SHARE
+    elif view == "share":
+        st.title("Gesprekken voor accountant")
+        if not st.session_state.conversations:
+            st.info("Er zijn nog geen gesprekken om te delen.")
+        else:
+            with st.form("share_form"):
+                checks = {}
+                for i, conv in enumerate(st.session_state.conversations):
+                    title = conv.get("title", f"Gesprek {i+1}")
+                    checked = conv.get("shared_with_accountant", False)
+                    checks[i] = st.checkbox(title, value=checked, key=f"share_{i}")
+                submit_share = st.form_submit_button("Opslaan")
+
+            if submit_share:
+                for i, v in checks.items():
+                    st.session_state.conversations[i]["shared_with_accountant"] = bool(
+                        v
+                    )
+                st.success("Selectie bijgewerkt.")
+                st.experimental_rerun()
+
+# --- EINDE finny_app.py ---
