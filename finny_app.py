@@ -434,6 +434,17 @@ if check_password():
                 prof.get("focus", ""),
             )
 
+            # NIEUW: detailniveau van antwoorden
+            current_detail = prof.get("answer_detail", "Normaal")
+            if current_detail not in ["Kort", "Normaal", "Uitgebreid"]:
+                current_detail = "Normaal"
+
+            answer_detail = st.select_slider(
+                "Hoe uitgebreid wil je dat Finny antwoordt?",
+                options=["Kort", "Normaal", "Uitgebreid"],
+                value=current_detail,
+            )
+
             uploaded_photo = st.file_uploader(
                 "Upload een foto of logo voor dit gesprek (optioneel)",
                 type=["png", "jpg", "jpeg"],
@@ -442,7 +453,13 @@ if check_password():
             submit_profile = st.form_submit_button("Opslaan & naar chat")
 
         if submit_profile:
-            prof.update({"finance_knowledge": kennis, "focus": focus_val})
+            prof.update(
+                {
+                    "finance_knowledge": kennis,
+                    "focus": focus_val,
+                    "answer_detail": answer_detail,
+                }
+            )
 
             if uploaded_photo is not None:
                 ext = os.path.splitext(uploaded_photo.name)[1].lower() or ".png"
@@ -492,6 +509,8 @@ if check_password():
 
                     profile = st.session_state.client_profile
                     fin_know = int(profile.get("finance_knowledge", 2))
+
+                    # toon
                     if fin_know <= 2:
                         tone = (
                             "Leg het uit in eenvoudige taal (Jip-en-Janneke). "
@@ -502,20 +521,70 @@ if check_password():
                             "Gebruik professionele financiële termen en wees zakelijk en to-the-point."
                         )
                     else:
-                        tone = "Gebruik normale ondernemerstaal: concreet, zonder overdreven jargon."
+                        tone = (
+                            "Gebruik normale ondernemerstaal: concreet, zonder overdreven jargon."
+                        )
+
+                    # detailinstelling uit kennismaking
+                    detail = profile.get("answer_detail", "Normaal")
+                    if detail not in ["Kort", "Normaal", "Uitgebreid"]:
+                        detail = "Normaal"
+                    if detail == "Kort":
+                        base_max_sentences = 1
+                    elif detail == "Uitgebreid":
+                        base_max_sentences = 4
+                    else:
+                        base_max_sentences = 2  # standaard: max 2 zinnen
+
+                    # vraaglengte / type
+                    prompt_lower = prompt.lower()
+                    word_count = len(prompt_lower.split())
+                    analysis_terms = [
+                        "waarom",
+                        "hoe ",
+                        "analyse",
+                        "analyses",
+                        "advies",
+                        "adviseer",
+                        "inschatting",
+                        "verklaar",
+                        "wat betekent",
+                        "gevolgen",
+                        "scenario",
+                        "prognose",
+                        "toelichting",
+                    ]
+                    is_analytical = any(term in prompt_lower for term in analysis_terms)
+
+                    if is_analytical or word_count > 18:
+                        max_sentences = base_max_sentences + 2
+                    else:
+                        max_sentences = base_max_sentences
+                    if max_sentences > 6:
+                        max_sentences = 6
+
+                    is_fact_question = (not is_analytical) and word_count <= 18
+
+                    if is_fact_question and detail != "Uitgebreid":
+                        rule5 = (
+                            "5. Geef geen afsluitende vervolgvraag; beantwoord alleen de vraag.\n"
+                        )
+                    else:
+                        rule5 = (
+                            "5. Je mag afsluiten met maximaal één korte vervolgvraag "
+                            "als dat logisch is voor de ondernemer.\n"
+                        )
 
                     system_prompt = (
                         "Je bent Finny, een financiële assistent voor ondernemers.\n\n"
                         f"CONTEXT (FEITEN – gebruik dit als waarheid):\n{context}\n\n"
                         f"INTENTIE: type={intent['type']}, term='{intent['term']}'.\n\n"
                         "REGELS VOOR JE ANTWOORD:\n"
-                        "1. Geef een direct antwoord op de vraag, in maximaal 4 zinnen.\n"
+                        f"1. Geef een direct antwoord op de vraag in hooguit {max_sentences} korte zinnen.\n"
                         "2. Noem concrete bedragen als die in de context staan.\n"
-                        "3. Verzin NOOIT cijfers of jaartallen; als iets ontbreekt, zeg dat eerlijk.\n"
-                        "4. "
-                        + tone
-                        + "\n"
-                        "5. Sluit af met één korte vervolgvraag die logisch is voor de ondernemer.\n"
+                        "3. Verzin NOOIT cijfers of jaartallen; als iets ontbreekt of onduidelijk is, zeg dat eerlijk.\n"
+                        f"4. {tone}\n"
+                        f"{rule5}"
                     )
 
                     msgs = [{"role": "system", "content": system_prompt}]
@@ -527,7 +596,9 @@ if check_password():
                         )
                         reply = resp.choices[0].message.content
                     except Exception as e:
-                        reply = f"Er ging iets mis bij het ophalen van het antwoord van het model: {e}"
+                        reply = (
+                            f"Er ging iets mis bij het ophalen van het antwoord van het model: {e}"
+                        )
 
                     st.write(reply)
                     st.session_state.messages.append(
