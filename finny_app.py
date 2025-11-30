@@ -22,6 +22,50 @@ load_dotenv()
 
 AVAILABLE_YEARS = [2022, 2023, 2024]
 
+# Kleine fallback-synoniemenmapping in code (D)
+FALLBACK_SYNONYMS = {
+    "auto": [
+        "auto", "autokosten", "bedrijfsauto", "lease", "leaseauto", "brandstof",
+        "tanken", "tankbeurt", "benzine", "diesel", "laadpaal", "laadkosten",
+        "kilometervergoeding", "km-vergoeding", "parkeer", "wegenbelasting"
+    ],
+    "telefoon": [
+        "telefoon", "telefonie", "telefoonkosten", "belkosten", "bellen",
+        "mobiel", "smartphone", "sim", "bundel", "databundel",
+        "internet", "wifi", "glasvezel", "microsoft 365", "teams"
+    ],
+    "personeel": [
+        "personeel", "personeelskosten", "loonkosten", "salaris", "lonen",
+        "loonstrook", "payroll", "werknemer", "vakantiegeld", "bonus",
+        "provisie", "werkgeverslasten", "sociale lasten", "pensioen"
+    ],
+    "huisvesting": [
+        "huisvesting", "huisvestingskosten", "kantoorpand", "bedrijfspand",
+        "huur", "huur kantoor", "werkruimte", "bedrijfshuur",
+        "gas", "water", "licht", "energie", "elektra", "nutsvoorzieningen"
+    ],
+    "verzekeringen": [
+        "verzekering", "verzekeringen", "poliskosten", "premie",
+        "aov", "arbeidsongeschiktheid", "bedrijfsaansprakelijkheid",
+        "rechtsbijstand", "inventarisverzekering", "opstalverzekering",
+        "autoverzekering", "wagenparkverzekering"
+    ],
+    "bank": [
+        "bankkosten", "kosten bank", "abonnementskosten bank", "betaalpakket",
+        "rente bank", "debetrente", "kredietrente", "rekening courant",
+        "pintransactie", "creditcardkosten", "incassokosten"
+    ],
+    "representatie": [
+        "representatie", "representatiekosten", "zakenlunch", "zakendiner",
+        "borrel", "relatiegeschenk", "relatiegeschenken", "klantendiner",
+        "netwerkborrel", "event", "beursbezoek"
+    ],
+    "reizen": [
+        "reis", "reiskosten", "reis- en verblijfkosten", "hotel",
+        "overnachting", "vliegticket", "vlucht", "taxi", "trein", "ov"
+    ],
+}
+
 # --- STATE ---
 if "active_years" not in st.session_state:
     st.session_state["active_years"] = AVAILABLE_YEARS
@@ -138,8 +182,9 @@ def load_data():
                     syn["Synoniem"].astype(str).str.lower().str.strip()
                 )
             data["syn"] = syn
-        except Exception as e:
-            st.error(f"Fout bij laden Finny_Synonyms.csv: {e}")
+        except Exception:
+            # Geen harde error in demo; we vallen automatisch terug op FALLBACK_SYNONYMS
+            data["syn"] = None
 
     # Jaarrekening PDFs
     pdf_files = glob.glob("*.pdf")
@@ -196,8 +241,8 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         "Gebruik Nederlandse termen zoals de gebruiker.\n"
     )
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
+        resp = client.chat_completions.create(
+            model="gpt-4.1-mini",
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
@@ -230,15 +275,32 @@ def extract_years(question: str, latest_year: int, intent_type: str) -> list[int
     return []
 
 
+def _extend_patterns_with_fallback(term: str, patterns: list[str]) -> list[str]:
+    """
+    Voeg fallback-synoniemen toe als de CSV niets oplevert (D).
+    """
+    term_l = term.lower()
+    extra = []
+    for key, syns in FALLBACK_SYNONYMS.items():
+        if key in term_l or term_l in key:
+            extra.extend(syns)
+    if extra:
+        patterns.extend(extra)
+    return patterns
+
+
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
-    df = data.get("trans")
+    """
+    Slimmere logica (A) + fallback-synoniemen (D)
+    - Bij één jaar vergelijken we automatisch met het voorafgaande jaar (indien beschikbaar).
+    - Bij TREND maken we een per-jaar overzicht plus korte trend-samenvatting.
+    """
+    base_df = data.get("trans")
     syn = data.get("syn")
-    if df is None or df.empty:
+    if base_df is None or base_df.empty:
         return None, None
 
-    str_years = [str(y) for y in years] if years else None
-    if str_years and "Year_Clean" in df.columns:
-        df = df[df["Year_Clean"].astype(str).isin(str_years)]
+    df = base_df.copy()
 
     # filter technische afsluitboekingen
     if "Description" in df.columns:
@@ -252,83 +314,190 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             )
         ]
 
+    # zorg dat Year_Clean bestaat
+    if "Year_Clean" not in df.columns:
+        if "Finny_Year" in df.columns:
+            df["Year_Clean"] = (
+                df["Finny_Year"].astype(str).str.split(".").str[0].str.strip()
+            )
+
     intent_type = intent["type"]
     term = (intent["term"] or "").lower().strip()
-    filtered = df
 
+    # --- SPECIFIEKE POST: synoniemen + fallback (D) ---
     if intent_type == "SPECIFIC_COST" and term:
         patterns: list[str] = [re.escape(term)]
+        used_csv_synonyms = False
 
-        # synoniemen uit externe CSV
+        # Synoniemenbestand
         if syn is not None and "Synoniem_Clean" in syn.columns:
             mask = syn["Synoniem_Clean"].astype(str).str.contains(term, case=False, na=False)
-            syn_terms = syn.loc[mask, "Synoniem_Clean"].dropna().unique().tolist()
-            patterns.extend(re.escape(t) for t in syn_terms)
-            for col in ["Categorie", "Finny_GLDescription", "Finny_GLCode"]:
-                if col in syn.columns:
-                    patterns.extend(
-                        re.escape(str(v).lower())
-                        for v in syn.loc[mask, col].dropna().unique().tolist()
-                    )
+            if mask.any():
+                used_csv_synonyms = True
+                syn_terms = syn.loc[mask, "Synoniem_Clean"].dropna().unique().tolist()
+                patterns.extend(re.escape(t) for t in syn_terms)
+                for col in ["Categorie", "Finny_GLDescription", "Finny_GLCode"]:
+                    if col in syn.columns:
+                        patterns.extend(
+                            re.escape(str(v).lower())
+                            for v in syn.loc[mask, col].dropna().unique().tolist()
+                        )
+
+        # Fallback als CSV niets oplevert
+        if not used_csv_synonyms:
+            patterns = _extend_patterns_with_fallback(term, patterns)
 
         pat = "|".join(sorted(set(patterns)))
         if "UniversalSearch" in df.columns and pat:
-            filtered = df[df["UniversalSearch"].astype(str).str.contains(pat, na=False)]
+            df = df[df["UniversalSearch"].astype(str).str.contains(pat, na=False)]
 
-    elif intent_type == "TOTAL_COST":
-        filtered = df
-    elif intent_type == "TREND":
-        filtered = df
+    # TOTAL_COST: geen extra filter (alles in df)
+    # TREND: alles in df, later per jaar
 
-    if filtered.empty:
+    if df.empty:
         return None, None
 
-    total = float(filtered["AmountDC_num"].sum())
+    # --- Bepaal jaren in de gefilterde set ---
+    available_years_in_df = sorted(
+        {int(y) for y in pd.to_numeric(df.get("Year_Clean", []), errors="coerce").dropna()}
+    )
+
+    # jaren-filter
+    str_years = [str(y) for y in years] if years else None
+    if str_years and "Year_Clean" in df.columns:
+        df_current_range = df[df["Year_Clean"].astype(str).isin(str_years)]
+    else:
+        df_current_range = df
+
+    if df_current_range.empty:
+        return None, None
+
+    total = float(df_current_range["AmountDC_num"].sum())
     if abs(total) < 1e-6:
-        return None, None  # liever PDF dan nul-saldo
+        # QC: saldo 0 → laat AI liever PDF gebruiken
+        return None, None
 
     yrs_label = ", ".join(str(y) for y in years) if years else "alle jaren"
     lines: list[str] = []
 
-    if intent_type == "TOTAL_COST":
-        lines.append(f"### TOTALE KOSTEN ({yrs_label})")
+    # Helper voor trendtekst
+    def trend_text(curr: float, prev: float, label: str) -> str:
+        if abs(prev) < 1e-6:
+            return f"{label} in het vorige jaar was nul of verwaarloosbaar; een percentage is daardoor niet zinvol."
+        diff = curr - prev
+        pct = (diff / abs(prev)) * 100.0
+        richting = "gestegen" if diff > 0 else ("gedaald" if diff < 0 else "ongeveer gelijk gebleven")
+        return (
+            f"{label} is {richting} met € {diff:,.0f} "
+            f"({pct:+.1f}% ten opzichte van het jaar ervoor)."
+        )
+
+    # --- TOTAL / SPECIFIC met automatische vergelijking A ---
+    if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
+        # standaard: enkel jaar → vergelijk met vorig jaar
+        if years and len(years) == 1 and "Year_Clean" in df.columns:
+            cur_year = years[0]
+            df_cur = df[df["Year_Clean"].astype(str) == str(cur_year)]
+            total_cur = float(df_cur["AmountDC_num"].sum())
+
+            prev_year = cur_year - 1 if (cur_year - 1) in available_years_in_df else None
+            prev_line = ""
+            if prev_year is not None:
+                df_prev = df[df["Year_Clean"].astype(str) == str(prev_year)]
+                total_prev = float(df_prev["AmountDC_num"].sum())
+                prev_line = trend_text(total_cur, total_prev, f"Ten opzichte van {prev_year}")
+            else:
+                total_prev = None
+
+            label = "totale kosten" if intent_type == "TOTAL_COST" else (term or "geselecteerde kosten")
+
+            lines.append(f"### {label.capitalize()} in {cur_year}")
+            lines.append(f"Totaal: € {total_cur:,.2f}")
+
+            if total_prev is not None:
+                lines.append(prev_line)
+
+            # Eventueel top 5 posten
+            if "Description" in df_cur.columns:
+                top = (
+                    df_cur.groupby("Description")["AmountDC_num"]
+                    .sum()
+                    .sort_values(ascending=False)
+                    .head(5)
+                    .reset_index()
+                )
+                if not top.empty:
+                    lines.append("")
+                    lines.append("Top 5 posten in dit jaar:")
+                    lines.append(top.to_markdown(index=False, floatfmt=".2f"))
+
+            return "\n".join(lines), total_cur
+
+        # Meerdere jaren of geen jaartal: werk als eenvoudige som over range
+        label = "totale kosten" if intent_type == "TOTAL_COST" else (term or "geselecteerde kosten")
+        lines.append(f"### {label.capitalize()} ({yrs_label})")
         lines.append(f"Totaal: € {total:,.2f}")
-    elif intent_type == "SPECIFIC_COST":
-        label = term or "geselecteerde kosten"
-        lines.append(f"### SPECIFIEKE KOSTEN – {label} ({yrs_label})")
-        lines.append(f"Totaal: € {total:,.2f}")
-    elif intent_type == "TREND":
-        lines.append(f"### VERLOOP ({yrs_label}) – Samenvatting uit transacties")
-        if "Year_Clean" in filtered.columns:
+
+        if "Year_Clean" in df_current_range.columns:
             per_year = (
-                filtered.groupby("Year_Clean")["AmountDC_num"]
+                df_current_range.groupby("Year_Clean")["AmountDC_num"]
+                .sum()
+                .reset_index()
+                .sort_values("Year_Clean")
+            )
+            if len(per_year) >= 2:
+                first_row = per_year.iloc[0]
+                last_row = per_year.iloc[-1]
+                try:
+                    y1 = int(first_row["Year_Clean"])
+                    y2 = int(last_row["Year_Clean"])
+                    t1 = float(first_row["AmountDC_num"])
+                    t2 = float(last_row["AmountDC_num"])
+                    lines.append("")
+                    lines.append(trend_text(t2, t1, f"Tussen {y1} en {y2}"))
+                except Exception:
+                    pass
+
+            lines.append("")
+            lines.append("Overzicht per jaar:")
+            lines.append(per_year.to_markdown(index=False, floatfmt=".2f"))
+
+        return "\n".join(lines), total
+
+    # --- TREND SPECIFIEK (A) ---
+    if intent_type == "TREND":
+        lines.append(f"### Verloop ({yrs_label}) – samenvatting uit transacties")
+        if "Year_Clean" in df_current_range.columns:
+            per_year = (
+                df_current_range.groupby("Year_Clean")["AmountDC_num"]
                 .sum()
                 .reset_index()
                 .sort_values("Year_Clean")
             )
             lines.append("")
             lines.append(per_year.to_markdown(index=False, floatfmt=".2f"))
+
+            if len(per_year) >= 2:
+                first_row = per_year.iloc[0]
+                last_row = per_year.iloc[-1]
+                try:
+                    y1 = int(first_row["Year_Clean"])
+                    y2 = int(last_row["Year_Clean"])
+                    t1 = float(first_row["AmountDC_num"])
+                    t2 = float(last_row["AmountDC_num"])
+                    lines.append("")
+                    lines.append(trend_text(t2, t1, f"Over de periode {y1}–{y2}"))
+                except Exception:
+                    pass
         else:
             lines.append(f"Totaal alle jaren samen: € {total:,.2f}")
-    else:
-        lines.append(f"### CIJFERS ({yrs_label})")
-        lines.append(f"Totaal: € {total:,.2f}")
 
-    if "Description" in filtered.columns:
-        top = (
-            filtered.groupby("Description")["AmountDC_num"]
-            .sum()
-            .sort_values(ascending=False)
-            .head(5)
-            .reset_index()
-        )
-        if not top.empty:
-            lines.append("")
-            lines.append("Top 5 posten:")
-            lines.append(top.to_markdown(index=False, floatfmt=".2f"))
+        return "\n".join(lines), total
 
-    context = "\n".join(lines)
-    return context, total
+    # --- CHAT of overige: simpele samenvatting uit CSV ---
+    lines.append(f"### Cijfers uit transacties ({yrs_label})")
+    lines.append(f"Totaal: € {total:,.2f}")
+    return "\n".join(lines), total
 
 
 def build_analysis(client: OpenAI, question: str, data: dict) -> dict:
@@ -434,7 +603,6 @@ if check_password():
                 prof.get("focus", ""),
             )
 
-            # NIEUW: detailniveau van antwoorden
             current_detail = prof.get("answer_detail", "Normaal")
             if current_detail not in ["Kort", "Normaal", "Uitgebreid"]:
                 current_detail = "Normaal"
@@ -510,7 +678,6 @@ if check_password():
                     profile = st.session_state.client_profile
                     fin_know = int(profile.get("finance_knowledge", 2))
 
-                    # toon
                     if fin_know <= 2:
                         tone = (
                             "Leg het uit in eenvoudige taal (Jip-en-Janneke). "
@@ -525,7 +692,6 @@ if check_password():
                             "Gebruik normale ondernemerstaal: concreet, zonder overdreven jargon."
                         )
 
-                    # detailinstelling uit kennismaking
                     detail = profile.get("answer_detail", "Normaal")
                     if detail not in ["Kort", "Normaal", "Uitgebreid"]:
                         detail = "Normaal"
@@ -534,9 +700,8 @@ if check_password():
                     elif detail == "Uitgebreid":
                         base_max_sentences = 4
                     else:
-                        base_max_sentences = 2  # standaard: max 2 zinnen
+                        base_max_sentences = 2  # standaard
 
-                    # vraaglengte / type
                     prompt_lower = prompt.lower()
                     word_count = len(prompt_lower.split())
                     analysis_terms = [
@@ -591,8 +756,8 @@ if check_password():
                     msgs.append({"role": "user", "content": prompt})
 
                     try:
-                        resp = client.chat.completions.create(
-                            model="gpt-4o-mini", messages=msgs
+                        resp = client.chat_completions.create(
+                            model="gpt-4.1-mini", messages=msgs
                         )
                         reply = resp.choices[0].message.content
                     except Exception as e:
