@@ -241,7 +241,8 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         "Gebruik Nederlandse termen zoals de gebruiker.\n"
     )
     try:
-        resp = client.chat_completions.create(
+        # FIX: nieuwe OpenAI client gebruikt client.chat.completions.create
+        resp = client.chat.completions.create(
             model="gpt-4.1-mini",
             response_format={"type": "json_object"},
             messages=[
@@ -756,7 +757,8 @@ if check_password():
                     msgs.append({"role": "user", "content": prompt})
 
                     try:
-                        resp = client.chat_completions.create(
+                        # FIX: nieuwe OpenAI client gebruikt client.chat.completions.create
+                        resp = client.chat.completions.create(
                             model="gpt-4.1-mini", messages=msgs
                         )
                         reply = resp.choices[0].message.content
