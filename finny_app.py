@@ -176,13 +176,11 @@ def load_data():
 
 # ==========================================
 # 3. SANDWICH-ARCHITECTUUR
-#    Code → AI (intent) → Code (data) → AI (antwoord)
 # ==========================================
 def classify_intent(client: OpenAI, question: str) -> dict:
     """
-    AI-intent: bepaal type vraag en hoofdterm.
     type ∈ {TOTAL_COST, SPECIFIC_COST, TREND, CHAT}
-    Géén jaartal-detectie hier.
+    (geen jaartal-detectie hier)
     """
     system = (
         "Je bent een router voor de Finny demo.\n"
@@ -217,16 +215,13 @@ def classify_intent(client: OpenAI, question: str) -> dict:
 
 
 def extract_years(question: str, latest_year: int, intent_type: str) -> list[int]:
-    """
-    Jaartallen pas ná intent detecteren.
-    """
+    """Jaartallen pas ná intent detecteren."""
     years = sorted(
         {int(y) for y in re.findall(r"\b(20[0-9]{2})\b", question) if int(y) in AVAILABLE_YEARS}
     )
     if years:
         return years
 
-    # geen jaartal: maak aannames op basis van type
     if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
         return [latest_year]
     if intent_type == "TREND":
@@ -290,8 +285,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
     total = float(filtered["AmountDC_num"].sum())
     if abs(total) < 1e-6:
-        # QC: saldo 0 is verdacht → laat AI liever PDF gebruiken
-        return None, None
+        return None, None  # liever PDF dan nul-saldo
 
     yrs_label = ", ".join(str(y) for y in years) if years else "alle jaren"
     lines: list[str] = []
@@ -338,12 +332,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
 
 def build_analysis(client: OpenAI, question: str, data: dict) -> dict:
-    """
-    1) AI-intent (type/term)
-    2) Jaar-detectie (code)
-    3) CSV-query (code) + QC
-    4) Fallback naar PDF indien nodig
-    """
     intent = classify_intent(client, question)
     intent_type = intent["type"]
     latest_year = data.get("latest_year", max(AVAILABLE_YEARS))
@@ -394,7 +382,6 @@ if check_password():
         )
         st.markdown("---")
 
-        # eventueel klantfoto tonen
         if st.session_state.user_avatar_path and os.path.exists(
             st.session_state.user_avatar_path
         ):
@@ -466,7 +453,7 @@ if check_password():
 
             st.session_state.client_profile = prof
             st.session_state.current_view = "chat"
-            st.experimental_rerun()
+            st.rerun()
 
     # CHAT
     elif view == "chat":
@@ -480,14 +467,12 @@ if check_password():
         else:
             user_avatar = "👤"
 
-        # bestaande berichten tonen
         for m in st.session_state.messages:
             st.chat_message(
                 m["role"],
                 avatar=finny_avatar if m["role"] == "assistant" else user_avatar,
             ).write(m["content"])
 
-        # nieuwe vraag
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
         if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -589,6 +574,6 @@ if check_password():
                         v
                     )
                 st.success("Selectie bijgewerkt.")
-                st.experimental_rerun()
+                st.rerun()
 
 # --- EINDE finny_app.py ---
