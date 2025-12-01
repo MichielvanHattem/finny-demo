@@ -93,6 +93,8 @@ if "last_analysis" not in st.session_state:
     st.session_state.last_analysis = None
 if "pending_followup" not in st.session_state:
     st.session_state.pending_followup = None
+if "conversation_log" not in st.session_state:
+    st.session_state.conversation_log = []  # gestructureerd logboek van Q&A
 
 
 def check_password() -> bool:
@@ -330,6 +332,57 @@ def extract_optional_topic_from_text(text: str) -> str | None:
     for key in FALLBACK_SYNONYMS.keys():
         if key in t:
             return key
+    return None
+
+
+def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) -> str | None:
+    """
+    Optie B 2.0: herken korte vervolgvragen zoals 'Hoe komt dat?'
+    en vertaal ze naar een volledige vraag op basis van de vorige analyse.
+    Retourneert een synthetische vraag of None.
+    """
+    if not last_analysis:
+        return None
+
+    t = text.strip().lower()
+    if not t:
+        return None
+
+    words = t.split()
+    # langere vragen behandelen we als nieuwe, zelfstandige vraag
+    if len(words) > 8:
+        return None
+
+    # als er al expliciet een jaar in staat, laten we het aan de normale router
+    if re.search(r"\b20[0-9]{2}\b", t):
+        return None
+
+    intent = last_analysis.get("intent") or {}
+    term = (intent.get("term") or "").lower()
+    years = last_analysis.get("years") or [data.get("latest_year", max(AVAILABLE_YEARS))]
+    years = [y for y in years if isinstance(y, int)]
+
+    # Uitlegvraag: 'hoe komt dat', 'waarom', 'hoe kan dat', 'hoezo'
+    if any(p in t for p in ["hoe komt dat", "waarom", "hoe kan dat", "hoezo"]):
+        if years:
+            jaar_label = f" tussen {min(years)} en {max(years)}"
+        else:
+            jaar_label = ""
+
+        if "winst" in term:
+            onderwerp = "de winst na belastingen"
+        elif "omzet" in term:
+            onderwerp = "de omzet"
+        else:
+            onderwerp = "deze cijfers"
+
+        return (
+            f"Leg uit waardoor {onderwerp}{jaar_label} is veranderd. "
+            "Gebruik de belangrijkste kosten- en opbrengstposten uit de cijfers."
+        )
+
+    # hier kun je later andere patronen toevoegen (bijv. 'en verder?')
+
     return None
 
 
@@ -573,6 +626,27 @@ def build_analysis(client: OpenAI, question: str, data: dict) -> dict:
     }
 
 
+def build_conversation_snippet(max_turns: int = 2) -> str:
+    """
+    Maak een korte samenvatting van de laatste Q&A's uit het gesprek
+    voor in de system prompt.
+    """
+    log = st.session_state.get("conversation_log", [])
+    if not log:
+        return ""
+
+    recent = log[-max_turns:]
+    lines: list[str] = []
+    for turn in recent:
+        q = (turn.get("user_question") or "").strip()
+        a = (turn.get("answer") or "").strip()
+        if not q and not a:
+            continue
+        lines.append(f"- Vraag: {q}\n  Antwoord: {a}")
+
+    return "\n".join(lines)
+
+
 # ==========================================
 # 4. MAIN UI
 # ==========================================
@@ -714,6 +788,7 @@ if check_password():
                     effective_question = prompt
                     pending = st.session_state.get("pending_followup")
 
+                    # 1. Eerst: ja/nee op een expliciete Finny-vraag (pending_followup)
                     if pending:
                         follow_kind = classify_followup_answer(prompt)
                         if follow_kind == "CONFIRM":
@@ -745,6 +820,16 @@ if check_password():
                             # Onvoldoende duidelijke ja/nee; beschouw als nieuwe vraag
                             st.session_state.pending_followup = None
                             effective_question = prompt
+
+                    # 2. Daarna: generieke korte vervolgvragen op basis van last_analysis (Optie B 2.0)
+                    if st.session_state.get("pending_followup") is None:
+                        synthetic = detect_simple_followup(
+                            prompt,
+                            st.session_state.get("last_analysis"),
+                            data,
+                        )
+                        if synthetic:
+                            effective_question = synthetic
 
                     # --- BUILD ANALYSIS ---
                     analysis = build_analysis(client, effective_question, data)
@@ -846,8 +931,13 @@ if check_password():
                             followup_instruction = ""
                         # pending_followup blijft wat hij al was (kan None zijn)
 
+                    # --- GESPREKSSAMENVATTING ---
+                    conversation_snippet = build_conversation_snippet(max_turns=2)
+
                     system_prompt = (
                         "Je bent Finny, een financiële assistent voor ondernemers.\n\n"
+                        "GESPREK TOT NU TOE:\n"
+                        f"{conversation_snippet or 'Nog geen eerdere vragen.'}\n\n"
                         f"CONTEXT (FEITEN – gebruik dit als waarheid):\n{context}\n\n"
                         f"INTENTIE: type={intent['type']}, term='{intent['term']}'.\n\n"
                         "REGELS VOOR JE ANTWOORD:\n"
@@ -875,6 +965,17 @@ if check_password():
                     st.write(reply)
                     st.session_state.messages.append(
                         {"role": "assistant", "content": reply}
+                    )
+
+                    # --- LOGBOEK BIJWERKEN (conversation_log) ---
+                    st.session_state.conversation_log.append(
+                        {
+                            "timestamp": datetime.now().isoformat(),
+                            "user_question": prompt,
+                            "effective_question": effective_question,
+                            "analysis": analysis,
+                            "answer": reply,
+                        }
                     )
 
     # HISTORY
