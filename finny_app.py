@@ -66,6 +66,16 @@ FALLBACK_SYNONYMS = {
     ],
 }
 
+# --- FOLLOW-UP CONFIG ---
+YES_WORDS = {
+    "ja", "ja.", "ja!", "ja graag", "graag", "zeker", "prima",
+    "is goed", "doe maar", "ok", "oke", "okay"
+}
+NO_WORDS = {
+    "nee", "nee.", "nee!", "liever niet", "hoeft niet", "laat maar",
+    "niet nodig", "nee hoor"
+}
+
 # --- STATE ---
 if "active_years" not in st.session_state:
     st.session_state["active_years"] = AVAILABLE_YEARS
@@ -79,6 +89,10 @@ if "client_profile" not in st.session_state:
     st.session_state.client_profile = {}
 if "user_avatar_path" not in st.session_state:
     st.session_state.user_avatar_path = None
+if "last_analysis" not in st.session_state:
+    st.session_state.last_analysis = None
+if "pending_followup" not in st.session_state:
+    st.session_state.pending_followup = None
 
 
 def check_password() -> bool:
@@ -220,7 +234,7 @@ def load_data():
 
 
 # ==========================================
-# 3. SANDWICH-ARCHITECTUUR
+# 3. SANDWICH-ARCHITECTUUR & FOLLOW-UP HELPERS
 # ==========================================
 def classify_intent(client: OpenAI, question: str) -> dict:
     """
@@ -241,7 +255,6 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         "Gebruik Nederlandse termen zoals de gebruiker.\n"
     )
     try:
-        # FIX: nieuwe OpenAI client gebruikt client.chat.completions.create
         resp = client.chat.completions.create(
             model="gpt-4.1-mini",
             response_format={"type": "json_object"},
@@ -288,6 +301,36 @@ def _extend_patterns_with_fallback(term: str, patterns: list[str]) -> list[str]:
     if extra:
         patterns.extend(extra)
     return patterns
+
+
+def classify_followup_answer(text: str) -> str:
+    """
+    Classificeer een kort antwoord als bevestiging / afwijzing / anders.
+    Retourneert: 'CONFIRM', 'DECLINE' of 'OTHER'.
+    """
+    t = text.strip().lower()
+    if not t:
+        return "OTHER"
+
+    word_count = len(t.split())
+
+    if any(w in t for w in YES_WORDS) and word_count <= 6:
+        return "CONFIRM"
+    if any(w in t for w in NO_WORDS) and word_count <= 6:
+        return "DECLINE"
+    return "OTHER"
+
+
+def extract_optional_topic_from_text(text: str) -> str | None:
+    """
+    Kijk of er een bekende kostencategorie in de tekst genoemd wordt
+    (auto, telefoon, personeel, etc.). Retourneert de key of None.
+    """
+    t = text.lower()
+    for key in FALLBACK_SYNONYMS.keys():
+        if key in t:
+            return key
+    return None
 
 
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
@@ -661,12 +704,52 @@ if check_password():
 
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
         if prompt:
+            # Toon altijd de ruwe input van de gebruiker
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.chat_message("user", avatar=user_avatar).write(prompt)
 
             with st.chat_message("assistant", avatar=finny_avatar):
                 with st.spinner("Even rekenen..."):
-                    analysis = build_analysis(client, prompt, data)
+                    # --- FOLLOW-UP LOGICA ---
+                    effective_question = prompt
+                    pending = st.session_state.get("pending_followup")
+
+                    if pending:
+                        follow_kind = classify_followup_answer(prompt)
+                        if follow_kind == "CONFIRM":
+                            # optioneel nieuw onderwerp uit de tekst
+                            topic_override = extract_optional_topic_from_text(prompt)
+                            topic = topic_override or pending.get("topic", "winst")
+
+                            years = pending.get("years") or [
+                                data.get("latest_year", max(AVAILABLE_YEARS))
+                            ]
+                            years = [y for y in years if isinstance(y, int)]
+                            if years:
+                                jaar_label = f" tussen {min(years)} en {max(years)}"
+                            else:
+                                jaar_label = ""
+
+                            effective_question = (
+                                "Welke kostenposten (bijvoorbeeld "
+                                f"{topic}) hebben de grootste impact gehad op de "
+                                f"ontwikkeling van de winst{jaar_label}?"
+                            )
+                            # Deze follow-up is nu afgehandeld
+                            st.session_state.pending_followup = None
+                        elif follow_kind == "DECLINE":
+                            # Gebruiker wil de follow-up niet; reset pending en ga door
+                            st.session_state.pending_followup = None
+                            effective_question = prompt
+                        else:
+                            # Onvoldoende duidelijke ja/nee; beschouw als nieuwe vraag
+                            st.session_state.pending_followup = None
+                            effective_question = prompt
+
+                    # --- BUILD ANALYSIS ---
+                    analysis = build_analysis(client, effective_question, data)
+                    st.session_state.last_analysis = analysis
+
                     context = analysis["context"]
                     source = analysis["source"]
                     years = analysis["years"]
@@ -703,7 +786,7 @@ if check_password():
                     else:
                         base_max_sentences = 2  # standaard
 
-                    prompt_lower = prompt.lower()
+                    prompt_lower = effective_question.lower()
                     word_count = len(prompt_lower.split())
                     analysis_terms = [
                         "waarom",
@@ -735,11 +818,33 @@ if check_password():
                         rule5 = (
                             "5. Geef geen afsluitende vervolgvraag; beantwoord alleen de vraag.\n"
                         )
+                        allow_generic_followup = False
                     else:
                         rule5 = (
                             "5. Je mag afsluiten met maximaal één korte vervolgvraag "
                             "als dat logisch is voor de ondernemer.\n"
                         )
+                        allow_generic_followup = True
+
+                    # --- GERichte pending follow-up zetten bij TREND op winst ---
+                    followup_instruction = ""
+                    if intent["type"] == "TREND" and "winst" in effective_question.lower():
+                        yrs = years or [data.get("latest_year", max(AVAILABLE_YEARS))]
+                        yrs = [y for y in yrs if isinstance(y, int)]
+                        st.session_state.pending_followup = {
+                            "type": "TOP_COSTS_FOR_PROFIT_TREND",
+                            "topic": "winst",
+                            "years": yrs,
+                        }
+                        followup_instruction = (
+                            "6. Sluit af met de vraag: "
+                            "'Wil je dat ik ook laat zien welke kosten hier het meest aan bijdragen?'\n"
+                        )
+                    else:
+                        # alleen generieke follow-up als dat volgens regel5 mag
+                        if not allow_generic_followup:
+                            followup_instruction = ""
+                        # pending_followup blijft wat hij al was (kan None zijn)
 
                     system_prompt = (
                         "Je bent Finny, een financiële assistent voor ondernemers.\n\n"
@@ -751,13 +856,13 @@ if check_password():
                         "3. Verzin NOOIT cijfers of jaartallen; als iets ontbreekt of onduidelijk is, zeg dat eerlijk.\n"
                         f"4. {tone}\n"
                         f"{rule5}"
+                        f"{followup_instruction}"
                     )
 
                     msgs = [{"role": "system", "content": system_prompt}]
-                    msgs.append({"role": "user", "content": prompt})
+                    msgs.append({"role": "user", "content": effective_question})
 
                     try:
-                        # FIX: nieuwe OpenAI client gebruikt client.chat.completions.create
                         resp = client.chat.completions.create(
                             model="gpt-4.1-mini", messages=msgs
                         )
