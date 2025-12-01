@@ -8,6 +8,8 @@ from datetime import datetime
 from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
+import uuid
+from pathlib import Path
 
 # ==========================================
 # 0. SETUP & CONFIG
@@ -76,6 +78,37 @@ NO_WORDS = {
     "niet nodig", "nee hoor"
 }
 
+# ------------------------------------------
+# 0A. LOGGING / AVG-VRIENDELIJKE STORAGE
+# ------------------------------------------
+BASE_DIR = Path(".")
+LOG_DIR = BASE_DIR / "finny_logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+CONSENT_LOG = LOG_DIR / "consent_log.jsonl"
+FEEDBACK_LOG = LOG_DIR / "feedback_log.jsonl"
+ESCALATION_LOG = LOG_DIR / "escalation_log.jsonl"
+
+
+def get_session_id() -> str:
+    """Genereer een anonieme sessie-ID (geen naam, alleen UUID)."""
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+    return st.session_state.session_id
+
+
+def log_event(log_file: Path, event_type: str, details: dict):
+    """Schrijf AVG-proof logregel (geen naam, alleen sessie, timestamp & type)."""
+    event = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "session_id": get_session_id(),
+        "event_type": event_type,
+        "details": details or {},
+    }
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
 # --- STATE ---
 if "active_years" not in st.session_state:
     st.session_state["active_years"] = AVAILABLE_YEARS
@@ -95,7 +128,15 @@ if "pending_followup" not in st.session_state:
     st.session_state.pending_followup = None
 if "conversation_log" not in st.session_state:
     st.session_state.conversation_log = []
-
+# juridische vlaggen
+if "legal_accepted" not in st.session_state:
+    st.session_state.legal_accepted = False
+if "profile_consent" not in st.session_state:
+    st.session_state.profile_consent = False
+if "profile_consent_timestamp" not in st.session_state:
+    st.session_state.profile_consent_timestamp = None
+if "pending_escalation_message_id" not in st.session_state:
+    st.session_state.pending_escalation_message_id = None
 
 # ==========================================
 # 1. AUTH & CONVERSATIONS
@@ -135,6 +176,86 @@ def start_new_conversation() -> None:
     st.session_state.messages = []
     st.session_state["active_years"] = AVAILABLE_YEARS
     st.session_state.current_view = "chat"
+
+
+# ==========================================
+# 1B. LEGAL GATEWAY (DISCLAIMER + PROFILERING)
+# ==========================================
+
+def show_legal_gateway():
+    st.title("Welkom bij Finny")
+
+    with st.expander("Lees de gebruiksvoorwaarden en disclaimer", expanded=True):
+        st.markdown(
+            """
+**Finny als AI-assistent**
+
+Finny is een digitale AI-assistent die u helpt inzicht te krijgen in uw financiële cijfers. 
+Finny is geen menselijke accountant en haar antwoorden vormen géén professioneel financieel advies 
+of accountantsverklaring. U mag de informatie van Finny niet beschouwen als een definitief oordeel 
+of advies van een bevoegd accountant; raadpleeg bij belangrijke beslissingen altijd een 
+professionele adviseur.
+
+**Gebruik op eigen risico & aansprakelijkheid**
+
+Het gebruik van Finny is volledig voor eigen risico. Hoewel Finny met zorg is ontwikkeld, 
+kunnen antwoorden onjuist of onvolledig zijn. Buddy Workforce BV (ontwikkelaar van Finny) en 
+uw accountant aanvaarden geen enkele aansprakelijkheid voor fouten, schade of beslissingen die 
+voortvloeien uit het gebruik van Finny’s antwoorden. U blijft zelf verantwoordelijk voor de keuzes 
+die u maakt op basis van de door Finny gegeven informatie.
+
+**Voorlopige cijfers & no-speculation**
+
+Antwoorden of rapportages van Finny kunnen voorlopige financiële cijfers bevatten. 
+Deze voorlopige cijfers zijn enkel indicatief, niet gecontroleerd door een accountant en kunnen nog wijzigen. 
+Finny doet niet aan gissen of speculatie: als de benodigde betrouwbare gegevens ontbreken, zal Finny geen 
+antwoord geven in plaats van te raden. Dit betekent dat u soms het bericht krijgt dat er geen betrouwbaar 
+antwoord beschikbaar is, wanneer Finny onvoldoende zeker is van de informatie.
+            """
+        )
+
+    agreed = st.checkbox("Ik heb de disclaimer gelezen en ga akkoord.")
+
+    st.divider()
+    st.subheader("Toestemming voor opbouw klantprofiel")
+
+    st.info(
+        "Finny kan een persoonlijk klantprofiel voor u opbouwen om u beter van dienst te zijn. "
+        "Daarvoor analyseert Finny uw relevante financiële gegevens en eerdere interacties, zodat "
+        "antwoorden beter op uw situatie aansluiten. U beslist zelf of u dit wilt. "
+        "U kunt uw keuze later altijd wijzigen via de instellingen."
+    )
+
+    consent_profile = st.checkbox(
+        "Ik stem in met het analyseren van mijn gegevens voor een persoonlijk klantprofiel."
+    )
+
+    start = st.button("Start Finny", disabled=not agreed, type="primary")
+
+    if start:
+        st.session_state.legal_accepted = True
+        st.session_state.profile_consent = consent_profile
+        if consent_profile:
+            st.session_state.profile_consent_timestamp = datetime.utcnow().isoformat()
+            log_event(
+                CONSENT_LOG,
+                "profile_consent_granted",
+                {"consent": True},
+            )
+        else:
+            log_event(
+                CONSENT_LOG,
+                "profile_consent_denied",
+                {"consent": False},
+            )
+
+        log_event(
+            CONSENT_LOG,
+            "legal_disclaimer_accepted",
+            {"agreed": True},
+        )
+
+        st.experimental_rerun()
 
 
 # ==========================================
@@ -678,6 +799,103 @@ def build_conversation_snippet(max_turns: int = 2) -> str:
 
 
 # ==========================================
+# 3B. UI HULPFUNCTIE: DISCLAIMER, FEEDBACK & ESCALATIE
+# ==========================================
+
+ESCALATION_PHRASE = "Wilt u dat Finny uw vraag en relevante gegevens doorstuurt naar uw accountant?"
+
+
+def render_assistant_extras(content: str, idx: int):
+    """
+    Toon korte disclaimer, feedback (👍/👎) en escalatie-opties onder een Finny-antwoord.
+    """
+    # 1. Korte disclaimer
+    st.caption(
+        "Let op: dit antwoord is gegenereerd door Finny (AI-assistent) en "
+        "dient niet als professioneel advies. Controleer de informatie en "
+        "raadpleeg uw accountant bij twijfel. Voorlopige cijfers zijn "
+        "indicatief en kunnen afwijken van definitieve resultaten."
+    )
+
+    # 2. Feedback (👍 / 👎)
+    fb_col1, fb_col2, fb_col3 = st.columns([1, 1, 6])
+    with fb_col1:
+        good = st.button("👍", key=f"fb_up_{idx}", help="Antwoord is nuttig")
+    with fb_col2:
+        bad = st.button("👎", key=f"fb_down_{idx}", help="Antwoord is niet nuttig")
+
+    if good:
+        log_event(
+            FEEDBACK_LOG,
+            "answer_feedback",
+            {"message_index": idx, "rating": "up", "snippet": content[:200]},
+        )
+
+    key_show = f"show_fb_input_{idx}"
+    if bad:
+        st.session_state[key_show] = True
+        log_event(
+            FEEDBACK_LOG,
+            "answer_feedback",
+            {"message_index": idx, "rating": "down", "snippet": content[:200]},
+        )
+
+    if st.session_state.get(key_show, False):
+        reason = st.text_input(
+            "Wat klopte er niet aan dit antwoord?",
+            key=f"fb_reason_{idx}",
+        )
+        if st.button("Rapporteer", key=f"fb_report_{idx}"):
+            log_event(
+                FEEDBACK_LOG,
+                "answer_feedback_detail",
+                {
+                    "message_index": idx,
+                    "reason": reason,
+                    "snippet": content[:200],
+                },
+            )
+            st.success("Dank u, we hebben uw feedback ontvangen.")
+            st.session_state[key_show] = False
+
+    # 3. Escalatie naar accountant (als Finny dat voorstelt)
+    if ESCALATION_PHRASE in content:
+        st.info(
+            "Finny kan deze vraag met uw toestemming doorsturen naar uw accountant, "
+            "inclusief relevante financiële context."
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            yes = st.button(
+                "Ja, doorsturen naar accountant",
+                key=f"escalate_yes_{idx}",
+            )
+        with c2:
+            no = st.button(
+                "Nee, liever niet",
+                key=f"escalate_no_{idx}",
+            )
+
+        if yes:
+            log_event(
+                ESCALATION_LOG,
+                "escalation_approved",
+                {"message_index": idx, "snippet": content[:300]},
+            )
+            st.success(
+                "Uw vraag is door Finny gemarkeerd om naar uw accountant te worden doorgestuurd."
+            )
+
+        if no:
+            log_event(
+                ESCALATION_LOG,
+                "escalation_declined",
+                {"message_index": idx, "snippet": content[:300]},
+            )
+            st.info("Begrepen, uw vraag is niet doorgestuurd.")
+
+
+# ==========================================
 # 4. MAIN UI
 # ==========================================
 
@@ -689,6 +907,11 @@ if check_password():
 
     client = OpenAI(api_key=api_key)
     data = load_data()
+
+    # Juridische gateway vóór toegang tot app
+    if not st.session_state.legal_accepted:
+        show_legal_gateway()
+        st.stop()
 
     # SIDEBAR
     with st.sidebar:
@@ -728,6 +951,35 @@ if check_password():
         if choice != st.session_state.current_view:
             st.session_state.current_view = choice
             st.rerun()
+
+        # Privacy-instellingen
+        st.markdown("---")
+        st.subheader("Privacy & profiel")
+
+        current = st.session_state.profile_consent
+        new = st.toggle(
+            "Persoonlijk klantprofiel",
+            value=current,
+            help=(
+                "Sta Finny toe uw gegevens te gebruiken voor een persoonlijk klantprofiel "
+                "(gepersonaliseerde inzichten op basis van eerdere interacties)."
+            ),
+        )
+
+        if new != current:
+            st.session_state.profile_consent = new
+            status = "granted" if new else "revoked"
+            log_event(
+                CONSENT_LOG,
+                f"profile_consent_{status}",
+                {"new_value": new},
+            )
+            st.experimental_rerun()
+
+        st.caption(
+            "U kunt deze toestemming hier op elk moment intrekken of verlenen. "
+            "Wijzigingen worden direct opgeslagen."
+        )
 
     view = st.session_state.current_view
 
@@ -802,11 +1054,17 @@ if check_password():
         else:
             user_avatar = "👤"
 
-        for m in st.session_state.messages:
-            st.chat_message(
-                m["role"],
-                avatar=finny_avatar if m["role"] == "assistant" else user_avatar,
-            ).write(m["content"])
+        # Bestaande berichten renderen met disclaimer/feedback/escalatie
+        for idx, m in enumerate(st.session_state.messages):
+            role = m.get("role", "assistant")
+            content = m.get("content", "")
+            with st.chat_message(
+                role,
+                avatar=finny_avatar if role == "assistant" else user_avatar,
+            ):
+                st.write(content)
+                if role == "assistant":
+                    render_assistant_extras(content, idx)
 
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
 
@@ -969,7 +1227,11 @@ if check_password():
                         if not allow_generic_followup:
                             followup_instruction = ""
 
-                    conversation_snippet = build_conversation_snippet(max_turns=2)
+                    # Alleen eerdere Q/A als er profieltoestemming is
+                    if st.session_state.profile_consent:
+                        conversation_snippet = build_conversation_snippet(max_turns=2)
+                    else:
+                        conversation_snippet = ""
 
                     if followup_mode == "EXPLAIN_ONLY":
                         context_text = (
@@ -992,6 +1254,15 @@ if check_password():
                         f"4. {tone}\n"
                         f"{rule5}"
                         f"{followup_instruction}"
+                        "7. Als je het antwoord niet in de beschikbare data (CSV, PDF of context) kunt vinden, "
+                        "mag je NIET gissen. Gebruik dan letterlijk één van deze zinnen:\n"
+                        "- \"Er zijn helaas onvoldoende gegevens beschikbaar om deze vraag te beantwoorden.\"\n"
+                        "- \"Finny kan hier geen antwoord op geven zonder betrouwbare bron.\"\n"
+                        "- \"Om speculatie te voorkomen geeft Finny op deze vraag geen antwoord.\"\n\n"
+                        "8. Als de vraag een menselijk oordeel vereist of duidelijk buiten de beschikbare data valt, "
+                        "kun je voorstellen om de vraag door te sturen naar de accountant met de exacte zin:\n"
+                        "\"Finny kan deze vraag niet zelfstandig beantwoorden. Wilt u dat Finny uw vraag en relevante "
+                        "gegevens doorstuurt naar uw accountant?\"\n"
                     )
 
                     msgs = [{"role": "system", "content": system_prompt}]
@@ -1021,6 +1292,10 @@ if check_password():
                             "answer": reply,
                         }
                     )
+
+                    # Extra's direct tonen voor deze beurt
+                    current_idx = len(st.session_state.messages) - 1
+                    render_assistant_extras(reply, current_idx)
 
     # HISTORY
     elif view == "history":
