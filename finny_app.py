@@ -254,8 +254,6 @@ antwoord beschikbaar is, wanneer Finny onvoldoende zeker is van de informatie.
             "legal_disclaimer_accepted",
             {"agreed": True},
         )
-
-        # FIX: gebruik st.rerun in plaats van st.experimental_rerun
         st.rerun()
 
 
@@ -387,17 +385,17 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         "Je taak:\n"
         "- Bepaal of de nieuwe vraag een 'NEW' vraag is of een 'FOLLOW_UP' op de vorige.\n"
         "- Bepaal het soort analyse in 'analysis_type':\n"
-        "    - 'TOTAL_COST'   → totaal van kosten/uitgaven/resultaat in een periode\n"
+        "    - 'TOTAL_COST'    → totaal van kosten/uitgaven/resultaat in een periode\n"
         "    - 'SPECIFIC_COST'→ specifieke post (telefoon, auto, personeel, huur, etc.)\n"
         "    - 'TREND'        → verloop/vergelijking over jaren\n"
-        "    - 'DETAILS'      → drill-down / individuele transacties / specificatie\n"
-        "    - 'CHAT'         → algemene uitleg of praat zonder directe cijferanalyse\n"
+        "    - 'DETAILS'       → drill-down / individuele transacties / specificatie\n"
+        "    - 'CHAT'          → algemene uitleg of praat zonder directe cijferanalyse\n"
         "- Bepaal 'term' als het onderwerp van de vraag in gewone Nederlandse woorden.\n\n"
         "Geef ALLEEN een JSON-object terug met:\n"
         "{\n"
-        '  \"relation\": \"NEW\" | \"FOLLOW_UP\",\n'
-        '  \"analysis_type\": \"TOTAL_COST\" | \"SPECIFIC_COST\" | \"TREND\" | \"DETAILS\" | \"CHAT\",\n'
-        '  \"term\": \"<onderwerp in gewone woorden>\"\n'
+        '  "relation": "NEW" | "FOLLOW_UP",\n'
+        '  "analysis_type": "TOTAL_COST" | "SPECIFIC_COST" | "TREND" | "DETAILS" | "CHAT",\n'
+        '  "term": "<onderwerp in gewone woorden>"\n'
         "}\n"
     )
 
@@ -408,7 +406,7 @@ def classify_intent(client: OpenAI, question: str) -> dict:
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",  # Update naar 4o-mini voor json support
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
@@ -800,7 +798,7 @@ def build_conversation_snippet(max_turns: int = 2) -> str:
 
 
 # ==========================================
-# 3B. UI HULPFUNCTIE: DISCLAIMER, FEEDBACK & ESCALATIE
+# 3B. UI HULPFUNCTIE: DISCLAIMER, FEEDBACK & ESCALATIE (COMPACTE VERSIE)
 # ==========================================
 
 ESCALATION_PHRASE = "Wilt u dat Finny uw vraag en relevante gegevens doorstuurt naar uw accountant?"
@@ -808,23 +806,29 @@ ESCALATION_PHRASE = "Wilt u dat Finny uw vraag en relevante gegevens doorstuurt 
 
 def render_assistant_extras(content: str, idx: int):
     """
-    Toon korte disclaimer, feedback (👍/👎) en escalatie-opties onder een Finny-antwoord.
+    Toon korte disclaimer, feedback (👍/👎) en escalatie-opties
+    in een COMPACTE lay-out om verticale ruimte te besparen.
     """
-    # 1. Korte disclaimer
-    st.caption(
-        "Let op: dit antwoord is gegenereerd door Finny (AI-assistent) en "
-        "dient niet als professioneel advies. Controleer de informatie en "
-        "raadpleeg uw accountant bij twijfel. Voorlopige cijfers zijn "
-        "indicatief en kunnen afwijken van definitieve resultaten."
-    )
+    # 1. Compacte footer (Disclaimer + Feedback op één regel)
+    with st.container():
+        # Verhouding: 85% tekst, 15% knoppen
+        c1, c2 = st.columns([0.85, 0.15])
+        
+        with c1:
+            st.caption(
+                "⚠️ *AI-gegenereerd antwoord. Geen prof. advies.* "
+                "Raadpleeg bij twijfel uw accountant."
+            )
+        
+        with c2:
+            # Knoppen compact naast elkaar
+            sub_c1, sub_c2 = st.columns(2)
+            with sub_c1:
+                good = st.button("👍", key=f"fb_up_{idx}", help="Nuttig")
+            with sub_c2:
+                bad = st.button("👎", key=f"fb_down_{idx}", help="Niet nuttig")
 
-    # 2. Feedback (👍 / 👎)
-    fb_col1, fb_col2, fb_col3 = st.columns([1, 1, 6])
-    with fb_col1:
-        good = st.button("👍", key=f"fb_up_{idx}", help="Antwoord is nuttig")
-    with fb_col2:
-        bad = st.button("👎", key=f"fb_down_{idx}", help="Antwoord is niet nuttig")
-
+    # Logica voor feedback
     if good:
         log_event(
             FEEDBACK_LOG,
@@ -853,12 +857,14 @@ def render_assistant_extras(content: str, idx: int):
                 {
                     "message_index": idx,
                     "reason": reason,
-                    "snippet": content[:200]},
+                    "snippet": content[:200]
+                },
             )
             st.success("Dank u, we hebben uw feedback ontvangen.")
             st.session_state[key_show] = False
 
-    # 3. Escalatie naar accountant (als Finny dat voorstelt)
+    # 2. Escalatie naar accountant (als Finny dat voorstelt)
+    # Dit staat LOS van de footer, want dit is een actieve actie.
     if ESCALATION_PHRASE in content:
         st.info(
             "Finny kan deze vraag met uw toestemming doorsturen naar uw accountant, "
@@ -974,7 +980,6 @@ if check_password():
                 f"profile_consent_{status}",
                 {"new_value": new},
             )
-            # FIX: ook hier st.rerun
             st.rerun()
 
         st.caption(
@@ -1271,7 +1276,7 @@ if check_password():
 
                     try:
                         resp = client.chat.completions.create(
-                            model="gpt-4.1-mini", messages=msgs
+                            model="gpt-4o-mini", messages=msgs
                         )
                         reply = resp.choices[0].message.content
                     except Exception as e:
