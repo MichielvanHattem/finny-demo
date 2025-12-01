@@ -255,7 +255,8 @@ antwoord beschikbaar is, wanneer Finny onvoldoende zeker is van de informatie.
             {"agreed": True},
         )
 
-        st.experimental_rerun()
+        # FIX: gebruik st.rerun in plaats van st.experimental_rerun
+        st.rerun()
 
 
 # ==========================================
@@ -852,8 +853,7 @@ def render_assistant_extras(content: str, idx: int):
                 {
                     "message_index": idx,
                     "reason": reason,
-                    "snippet": content[:200],
-                },
+                    "snippet": content[:200]},
             )
             st.success("Dank u, we hebben uw feedback ontvangen.")
             st.session_state[key_show] = False
@@ -974,7 +974,8 @@ if check_password():
                 f"profile_consent_{status}",
                 {"new_value": new},
             )
-            st.experimental_rerun()
+            # FIX: ook hier st.rerun
+            st.rerun()
 
         st.caption(
             "U kunt deze toestemming hier op elk moment intrekken of verlenen. "
