@@ -310,11 +310,11 @@ def classify_intent(client: OpenAI, question: str) -> dict:
                 },
             ],
         )
-        data = json.loads(resp.choices[0].message.content)
+        data_resp = json.loads(resp.choices[0].message.content)
 
-        analysis_type = (data.get("analysis_type") or data.get("type") or "CHAT").upper()
-        term = (data.get("term") or "").strip()
-        relation = (data.get("relation") or "NEW").upper()
+        analysis_type = (data_resp.get("analysis_type") or data_resp.get("type") or "CHAT").upper()
+        term = (data_resp.get("term") or "").strip()
+        relation = (data_resp.get("relation") or "NEW").upper()
 
         if analysis_type not in {"TOTAL_COST", "SPECIFIC_COST", "TREND", "DETAILS", "CHAT"}:
             analysis_type = "CHAT"
@@ -375,8 +375,16 @@ def extract_optional_topic_from_text(text: str) -> str | None:
 
 def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) -> str | None:
     """
-    Beperkte follow-up: 'hoe komt dat' → uitleg vraag.
-    (Zwaardere interpretatie gebeurt in classify_intent.)
+    Herken simpele 'waarom / hoe komt dat'-vervolgvragen.
+
+    In plaats van opnieuw via de CSV/PDF te rekenen, schakelen we dan over
+    op een EXPLAIN-ONLY modus: de AI mag alleen de eerder genoemde bedragen
+    en verhoudingen in het gesprek gebruiken, en geeft een logische uitleg
+    (bijvoorbeeld: brandstof is een deelpost van autokosten, andere autokosten
+    kunnen dalen, etc.).
+
+    We coderen dat via een speciale prefix: [FOLLOWUP_EXPLAIN]
+    zodat de chat-loop dit kan herkennen.
     """
     if not last_analysis:
         return None
@@ -385,37 +393,46 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     if not t:
         return None
 
-    words = t.split()
-    if len(words) > 12:
+    # Alleen korte, typische vervolgvragen:
+    if len(t.split()) > 20:
         return None
 
+    # Als er expliciet een jaar in staat, beschouwen we het als nieuwe inhoudelijke vraag
     if re.search(r"\b20[0-9]{2}\b", t):
         return None
 
-    intent = last_analysis.get("intent") or {}
-    term = (intent.get("term") or "").lower()
-    years = last_analysis.get("years") or [data.get("latest_year", max(AVAILABLE_YEARS))]
-    years = [y for y in years if isinstance(y, int)]
+    # Triggerwoorden voor een uitleg-vraag
+    trigger_patterns = [
+        r"\bwaarom\b",
+        r"hoe komt dat",
+        r"hoe kan dat",
+        r"hoezo",
+        r"waar komt dat door",
+        r"waar ligt dat aan",
+    ]
+    if not any(re.search(p, t) for p in trigger_patterns):
+        return None
 
-    if any(p in t for p in ["hoe komt dat", "waarom", "hoe kan dat", "hoezo"]):
-        if years:
-            jaar_label = f" tussen {min(years)} en {max(years)}"
-        else:
-            jaar_label = ""
+    # We bouwen een instructie voor de AI:
+    # - neem de direct voorafgaande antwoorden als basis
+    # - leg uit hoe de genoemde bedragen zich tot elkaar verhouden
+    # - ga niet opnieuw rekenen in CSV/PDF
+    original_question = text.strip()
 
-        if "winst" in term:
-            onderwerp = "de winst na belastingen"
-        elif "omzet" in term:
-            onderwerp = "de omzet"
-        else:
-            onderwerp = "deze cijfers"
+    synthetic_question = (
+        "[FOLLOWUP_EXPLAIN] "
+        "De ondernemer stelt nu de vervolg-vraag: '"
+        + original_question
+        + "'. "
+        "Gebruik ALLEEN de bedragen en verhoudingen die eerder in dit gesprek zijn genoemd "
+        "(bijvoorbeeld winst, autokosten en brandstofkosten) en geef in gewone taal een korte uitleg "
+        "waarom die cijfers zo kunnen uitpakken. "
+        "Ga NIET opnieuw rekenen op basis van CSV- of PDF-data, maar leg het principe uit "
+        "(bijvoorbeeld: een totaalpost bestaat uit meerdere deelposten, dus een stijging in brandstof "
+        "kan worden gecompenseerd door daling in andere autokosten zoals lease, onderhoud of verzekering)."
+    )
 
-        return (
-            f"Leg uit waardoor {onderwerp}{jaar_label} is veranderd. "
-            "Gebruik de belangrijkste kosten- en opbrengstposten uit de cijfers."
-        )
-
-    return None
+    return synthetic_question
 
 
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
@@ -693,7 +710,7 @@ def build_conversation_snippet(max_turns: int = 2) -> str:
 # ==========================================
 
 if check_password():
-    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
+    api_key = os.getenv("OPENAI_API_KEY") or getattr(st, "secrets", {}).get("OPENAI_API_KEY", None)
     if not api_key:
         st.error("Geen OPENAI_API_KEY gevonden in .env of Streamlit secrets.")
         st.stop()
@@ -744,7 +761,8 @@ if check_password():
 
     # INTRO
     if view == "intro":
-        st.title("Welkom bij Finny")
+        st.title("Wel
+kom bij Finny")
         st.write(
             "Ik werk met jouw demo-data (CSV + jaarrekening) en geef korte, feitelijke antwoorden. "
             "Stel een vraag over kosten, winst, omzet of trends."
@@ -829,8 +847,9 @@ if check_password():
                 with st.spinner("Even rekenen..."):
                     effective_question = prompt
                     pending = st.session_state.get("pending_followup")
+                    followup_mode = "NONE"  # belangrijk voor EXPLAIN_ONLY
 
-                    # 1. Expliete ja/nee op Finny-vraag
+                    # 1. Expliciete ja/nee op Finny-vraag
                     if pending:
                         follow_kind = classify_followup_answer(prompt)
                         if follow_kind == "CONFIRM":
@@ -867,10 +886,23 @@ if check_password():
                             data,
                         )
                         if synthetic:
+                            if synthetic.startswith("[FOLLOWUP_EXPLAIN]"):
+                                followup_mode = "EXPLAIN_ONLY"
                             effective_question = synthetic
 
                     # Analyse & context
-                    analysis = build_analysis(client, effective_question, data)
+                    if followup_mode == "EXPLAIN_ONLY":
+                        # Geen nieuwe CSV/PDF-analyse; we blijven bij het gesprek zelf.
+                        analysis = {
+                            "intent": {"type": "CHAT", "term": ""},
+                            "years": [],
+                            "source": "GESPREK",
+                            "context": "",
+                            "total": None,
+                        }
+                    else:
+                        analysis = build_analysis(client, effective_question, data)
+
                     st.session_state.last_analysis = analysis
 
                     context = analysis["context"]
@@ -950,7 +982,11 @@ if check_password():
                         allow_generic_followup = True
 
                     followup_instruction = ""
-                    if intent["type"] == "TREND" and "winst" in effective_question.lower():
+                    if (
+                        followup_mode != "EXPLAIN_ONLY"
+                        and intent["type"] == "TREND"
+                        and "winst" in effective_question.lower()
+                    ):
                         yrs = years or [data.get("latest_year", max(AVAILABLE_YEARS))]
                         yrs = [y for y in yrs if isinstance(y, int)]
                         st.session_state.pending_followup = {
@@ -968,15 +1004,24 @@ if check_password():
 
                     conversation_snippet = build_conversation_snippet(max_turns=2)
 
+                    # In EXPLAIN_ONLY-modus: benadruk dat alleen gesprek gebruikt mag worden
+                    if followup_mode == "EXPLAIN_ONLY":
+                        context_text = (
+                            "LET OP: Je mag GEEN nieuwe cijfers uit andere bronnen gebruiken. "
+                            "Baseer je alleen op eerder genoemde bedragen in het gesprek.\n\n"
+                        )
+                    else:
+                        context_text = context
+
                     system_prompt = (
                         "Je bent Finny, een financiële assistent voor ondernemers.\n\n"
                         "GESPREK TOT NU TOE:\n"
                         f"{conversation_snippet or 'Nog geen eerdere vragen.'}\n\n"
-                        f"CONTEXT (FEITEN – gebruik dit als waarheid):\n{context}\n\n"
-                        f"INTENTIE: type={intent['type']}, term='{intent['term']}'.\n\n"
+                        f"CONTEXT (FEITEN – gebruik dit als waarheid waar van toepassing):\n{context_text}\n\n"
+                        f"INTENTIE: type={intent['type']}, term='{intent.get('term', '')}'.\n\n"
                         "REGELS VOOR JE ANTWOORD:\n"
                         f"1. Geef een direct antwoord op de vraag in hooguit {max_sentences} korte zinnen.\n"
-                        "2. Noem concrete bedragen als die in de context staan.\n"
+                        "2. Noem concrete bedragen als die in de context of in het gesprek staan.\n"
                         "3. Verzin NOOIT cijfers of jaartallen; als iets ontbreekt of onduidelijk is, zeg dat eerlijk.\n"
                         f"4. {tone}\n"
                         f"{rule5}"
