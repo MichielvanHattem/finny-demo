@@ -361,7 +361,8 @@ def extract_optional_topic_from_text(text: str) -> str | None:
 
 def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) -> str | None:
     """
-    Herken simpele 'waarom / hoe komt dat'-vervolgvragen -> EXPLAIN_ONLY-modus.
+    Herken simpele 'waarom / hoe komt dat'-vervolgvragen -> EXPLAIN_ONLY,
+    MAAR niet als de vraag duidelijk over details / transacties / maanden gaat.
     """
     if not last_analysis:
         return None
@@ -370,12 +371,20 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     if not t:
         return None
 
+    # Lange vragen: beschouw als nieuwe inhoudelijke vraag
     if len(t.split()) > 20:
         return None
 
+    # Als er expliciet een jaar in staat → opnieuw rekenen, geen explain-only
     if re.search(r"\b20[0-9]{2}\b", t):
         return None
 
+    # Vragen over transacties / per maand / overzicht moeten juist de data in
+    detail_stop_words = ["transactie", "transacties", "per maand", "maand", "maandelijks"]
+    if any(w in t for w in detail_stop_words):
+        return None
+
+    # Triggerwoorden voor een uitleg-vraag
     trigger_patterns = [
         r"\bwaarom\b",
         r"hoe komt dat",
