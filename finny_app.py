@@ -8,8 +8,6 @@ from datetime import datetime
 from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
-import uuid
-from pathlib import Path
 
 # ==========================================
 # 0. SETUP & CONFIG
@@ -25,7 +23,7 @@ load_dotenv()
 
 AVAILABLE_YEARS = [2022, 2023, 2024]
 
-# --- FALLBACK-SYNONIEMEN (Optie D) ---
+# Kleine fallback-synoniemenmapping in code (D)
 FALLBACK_SYNONYMS = {
     "auto": [
         "auto", "autokosten", "bedrijfsauto", "lease", "leaseauto", "brandstof",
@@ -69,6 +67,7 @@ FALLBACK_SYNONYMS = {
     ],
 }
 
+# --- FOLLOW-UP CONFIG ---
 YES_WORDS = {
     "ja", "ja.", "ja!", "ja graag", "graag", "zeker", "prima",
     "is goed", "doe maar", "ok", "oke", "okay"
@@ -77,37 +76,6 @@ NO_WORDS = {
     "nee", "nee.", "nee!", "liever niet", "hoeft niet", "laat maar",
     "niet nodig", "nee hoor"
 }
-
-# ------------------------------------------
-# 0A. LOGGING / AVG-VRIENDELIJKE STORAGE
-# ------------------------------------------
-BASE_DIR = Path(".")
-LOG_DIR = BASE_DIR / "finny_logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-CONSENT_LOG = LOG_DIR / "consent_log.jsonl"
-FEEDBACK_LOG = LOG_DIR / "feedback_log.jsonl"
-ESCALATION_LOG = LOG_DIR / "escalation_log.jsonl"
-
-
-def get_session_id() -> str:
-    """Genereer een anonieme sessie-ID (geen naam, alleen UUID)."""
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = str(uuid.uuid4())
-    return st.session_state.session_id
-
-
-def log_event(log_file: Path, event_type: str, details: dict):
-    """Schrijf AVG-proof logregel (geen naam, alleen sessie, timestamp & type)."""
-    event = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "session_id": get_session_id(),
-        "event_type": event_type,
-        "details": details or {},
-    }
-    with log_file.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(event, ensure_ascii=False) + "\n")
-
 
 # --- STATE ---
 if "active_years" not in st.session_state:
@@ -127,31 +95,8 @@ if "last_analysis" not in st.session_state:
 if "pending_followup" not in st.session_state:
     st.session_state.pending_followup = None
 if "conversation_log" not in st.session_state:
-    st.session_state.conversation_log = []
-# juridische vlaggen
-if "legal_accepted" not in st.session_state:
-    st.session_state.legal_accepted = False
-if "profile_consent" not in st.session_state:
-    st.session_state.profile_consent = False
-if "profile_consent_timestamp" not in st.session_state:
-    st.session_state.profile_consent_timestamp = None
-if "pending_escalation_message_id" not in st.session_state:
-    st.session_state.pending_escalation_message_id = None
-# escalatie + sessie-feedback
-if "escalation_consent" not in st.session_state:
-    st.session_state.escalation_consent = None  # None / True / False
-if "escalated_message_ids" not in st.session_state:
-    st.session_state.escalated_message_ids = []
-if "session_feedback_given" not in st.session_state:
-    st.session_state.session_feedback_given = False
-if "show_conv_feedback_input" not in st.session_state:
-    st.session_state.show_conv_feedback_input = False
-if "conversation_finished" not in st.session_state:
-    st.session_state.conversation_finished = False
+    st.session_state.conversation_log = []  # gestructureerd logboek
 
-# ==========================================
-# 1. AUTH & CONVERSATIONS
-# ==========================================
 
 def check_password() -> bool:
     if "password_correct" not in st.session_state:
@@ -187,91 +132,6 @@ def start_new_conversation() -> None:
     st.session_state.messages = []
     st.session_state["active_years"] = AVAILABLE_YEARS
     st.session_state.current_view = "chat"
-    st.session_state.session_feedback_given = False
-    st.session_state.show_conv_feedback_input = False
-    st.session_state.conversation_finished = False
-    st.session_state.escalation_consent = None
-    st.session_state.escalated_message_ids = []
-
-
-# ==========================================
-# 1B. LEGAL GATEWAY (DISCLAIMER + PROFILERING)
-# ==========================================
-
-def show_legal_gateway():
-    st.title("Welkom bij Finny")
-
-    with st.expander("Lees de gebruiksvoorwaarden en disclaimer", expanded=True):
-        st.markdown(
-            """
-**Finny als AI-assistent**
-
-Finny is een digitale AI-assistent die u helpt inzicht te krijgen in uw financiële cijfers. 
-Finny is geen menselijke accountant en haar antwoorden vormen géén professioneel financieel advies 
-of accountantsverklaring. U mag de informatie van Finny niet beschouwen als een definitief oordeel 
-of advies van een bevoegd accountant; raadpleeg bij belangrijke beslissingen altijd een 
-professionele adviseur.
-
-**Gebruik op eigen risico & aansprakelijkheid**
-
-Het gebruik van Finny is volledig voor eigen risico. Hoewel Finny met zorg is ontwikkeld, 
-kunnen antwoorden onjuist of onvolledig zijn. Buddy Workforce BV (ontwikkelaar van Finny) en 
-uw accountant aanvaarden geen enkele aansprakelijkheid voor fouten, schade of beslissingen die 
-voortvloeien uit het gebruik van Finny’s antwoorden. U blijft zelf verantwoordelijk voor de keuzes 
-die u maakt op basis van de door Finny gegeven informatie.
-
-**Voorlopige cijfers & no-speculation**
-
-Antwoorden of rapportages van Finny kunnen voorlopige financiële cijfers bevatten. 
-Deze voorlopige cijfers zijn enkel indicatief, niet gecontroleerd door een accountant en kunnen nog wijzigen. 
-Finny doet niet aan gissen of speculatie: als de benodigde betrouwbare gegevens ontbreken, zal Finny geen 
-antwoord geven in plaats van te raden. Dit betekent dat u soms het bericht krijgt dat er geen betrouwbaar 
-antwoord beschikbaar is, wanneer Finny onvoldoende zeker is van de informatie.
-            """
-        )
-
-    agreed = st.checkbox("Ik heb de disclaimer gelezen en ga akkoord.")
-
-    st.divider()
-    st.subheader("Toestemming voor opbouw klantprofiel")
-
-    st.info(
-        "Finny kan een persoonlijk klantprofiel voor u opbouwen om u beter van dienst te zijn. "
-        "Daarvoor analyseert Finny uw relevante financiële gegevens en eerdere interacties, zodat "
-        "antwoorden beter op uw situatie aansluiten. U beslist zelf of u dit wilt. "
-        "U kunt uw keuze later altijd wijzigen via de instellingen."
-    )
-
-    consent_profile = st.checkbox(
-        "Ik stem in met het analyseren van mijn gegevens voor een persoonlijk klantprofiel."
-    )
-
-    start = st.button("Start Finny", disabled=not agreed, type="primary")
-
-    if start:
-        st.session_state.legal_accepted = True
-        st.session_state.profile_consent = consent_profile
-        if consent_profile:
-            st.session_state.profile_consent_timestamp = datetime.utcnow().isoformat()
-            log_event(
-                CONSENT_LOG,
-                "profile_consent_granted",
-                {"consent": True},
-            )
-        else:
-            log_event(
-                CONSENT_LOG,
-                "profile_consent_denied",
-                {"consent": False},
-            )
-
-        log_event(
-            CONSENT_LOG,
-            "legal_disclaimer_accepted",
-            {"agreed": True},
-        )
-
-        st.rerun()
 
 
 # ==========================================
@@ -306,6 +166,7 @@ def load_data():
                         y for y in AVAILABLE_YEARS if y <= data["latest_year"]
                     )
 
+            # noodzakelijke kolommen
             for col in [
                 "Description",
                 "AccountName",
@@ -376,12 +237,19 @@ def load_data():
 
 
 # ==========================================
-# 3. ROUTER & CSV-LOGICA (SANDWICH)
+# 3. SANDWICH-ARCHITECTUUR & FOLLOW-UP HELPERS
 # ==========================================
 
 def classify_intent(client: OpenAI, question: str) -> dict:
     """
     Context-gevoelige router.
+
+    Geeft terug:
+    {
+      "type": "TOTAL_COST" | "SPECIFIC_COST" | "TREND" | "DETAILS" | "CHAT",
+      "term": "<onderwerp>",
+      "relation": "NEW" | "FOLLOW_UP"
+    }
     """
     last = st.session_state.get("last_analysis") or {}
     last_intent = last.get("intent") or {}
@@ -408,6 +276,13 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         "    - 'DETAILS'      → drill-down / individuele transacties / specificatie\n"
         "    - 'CHAT'         → algemene uitleg of praat zonder directe cijferanalyse\n"
         "- Bepaal 'term' als het onderwerp van de vraag in gewone Nederlandse woorden.\n\n"
+        "Hints:\n"
+        "- Vragen naar transacties, bonnen, facturen of 'details' horen meestal bij 'DETAILS'.\n"
+        "- Vragen als 'hoe komt dat', 'waarom', of 'per maand daarvan' zijn vaak 'FOLLOW_UP' "
+        "op de vorige analyse.\n"
+        "- Als de vraag duidelijk de winst / omzet / kosten per periode wil weten, gebruik "
+        "'TOTAL_COST' of 'SPECIFIC_COST'.\n"
+        "- Als de vraag gaat over stijging/daling over jaren, gebruik 'TREND'.\n\n"
         "Geef ALLEEN een JSON-object terug met:\n"
         "{\n"
         '  \"relation\": \"NEW\" | \"FOLLOW_UP\",\n'
@@ -433,11 +308,11 @@ def classify_intent(client: OpenAI, question: str) -> dict:
                 },
             ],
         )
-        data_resp = json.loads(resp.choices[0].message.content)
+        data = json.loads(resp.choices[0].message.content)
 
-        analysis_type = (data_resp.get("analysis_type") or data_resp.get("type") or "CHAT").upper()
-        term = (data_resp.get("term") or "").strip()
-        relation = (data_resp.get("relation") or "NEW").upper()
+        analysis_type = (data.get("analysis_type") or data.get("type") or "CHAT").upper()
+        term = (data.get("term") or "").strip()
+        relation = (data.get("relation") or "NEW").upper()
 
         if analysis_type not in {"TOTAL_COST", "SPECIFIC_COST", "TREND", "DETAILS", "CHAT"}:
             analysis_type = "CHAT"
@@ -498,8 +373,9 @@ def extract_optional_topic_from_text(text: str) -> str | None:
 
 def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) -> str | None:
     """
-    Herken simpele 'waarom / hoe komt dat'-vervolgvragen -> EXPLAIN_ONLY,
-    MAAR niet als de vraag duidelijk over details / transacties / maanden gaat.
+    Herken korte vervolgvragen zoals 'Hoe komt dat?' en vertaal ze naar een
+    volledige vraag op basis van de vorige analyse.
+    (bewust beperkt; router doet het zware werk)
     """
     if not last_analysis:
         return None
@@ -508,52 +384,42 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     if not t:
         return None
 
-    # Lange vragen: beschouw als nieuwe inhoudelijke vraag
-    if len(t.split()) > 20:
+    words = t.split()
+    if len(words) > 12:
         return None
 
-    # Als er expliciet een jaar in staat → opnieuw rekenen, geen explain-only
     if re.search(r"\b20[0-9]{2}\b", t):
         return None
 
-    # Vragen over transacties / per maand / overzicht moeten juist de data in
-    detail_stop_words = ["transactie", "transacties", "per maand", "maand", "maandelijks"]
-    if any(w in t for w in detail_stop_words):
-        return None
+    intent = last_analysis.get("intent") or {}
+    term = (intent.get("term") or "").lower()
+    years = last_analysis.get("years") or [data.get("latest_year", max(AVAILABLE_YEARS))]
+    years = [y for y in years if isinstance(y, int)]
 
-    # Triggerwoorden voor een uitleg-vraag
-    trigger_patterns = [
-        r"\bwaarom\b",
-        r"hoe komt dat",
-        r"hoe kan dat",
-        r"hoezo",
-        r"waar komt dat door",
-        r"waar ligt dat aan",
-    ]
-    if not any(re.search(p, t) for p in trigger_patterns):
-        return None
+    if any(p in t for p in ["hoe komt dat", "waarom", "hoe kan dat", "hoezo"]):
+        if years:
+            jaar_label = f" tussen {min(years)} en {max(years)}"
+        else:
+            jaar_label = ""
 
-    original_question = text.strip()
+        if "winst" in term:
+            onderwerp = "de winst na belastingen"
+        elif "omzet" in term:
+            onderwerp = "de omzet"
+        else:
+            onderwerp = "deze cijfers"
 
-    synthetic_question = (
-        "[FOLLOWUP_EXPLAIN] "
-        "De ondernemer stelt nu de vervolg-vraag: '"
-        + original_question
-        + "'. "
-        "Gebruik ALLEEN de bedragen en verhoudingen die eerder in dit gesprek zijn genoemd "
-        "(bijvoorbeeld winst, autokosten en brandstofkosten) en geef in gewone taal een korte uitleg "
-        "waarom die cijfers zo kunnen uitpakken. "
-        "Ga NIET opnieuw rekenen op basis van CSV- of PDF-data, maar leg het principe uit "
-        "(bijvoorbeeld: een totaalpost bestaat uit meerdere deelposten, dus een stijging in brandstof "
-        "kan worden gecompenseerd door daling in andere autokosten zoals lease, onderhoud of verzekering)."
-    )
+        return (
+            f"Leg uit waardoor {onderwerp}{jaar_label} is veranderd. "
+            "Gebruik de belangrijkste kosten- en opbrengstposten uit de cijfers."
+        )
 
-    return synthetic_question
+    return None
 
 
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
     """
-    CSV-aggregatie + DETAILS-drill-down.
+    Slimmere logica (A) + fallback-synoniemen (D) + DETAILS-drill-down.
     """
     base_df = data.get("trans")
     syn = data.get("syn")
@@ -562,6 +428,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
     df = base_df.copy()
 
+    # filter technische afsluitboekingen
     if "Description" in df.columns:
         df = df[
             ~df["Description"]
@@ -573,6 +440,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             )
         ]
 
+    # zorg dat Year_Clean bestaat
     if "Year_Clean" not in df.columns and "Finny_Year" in df.columns:
         df["Year_Clean"] = (
             df["Finny_Year"].astype(str).str.split(".").str[0].str.strip()
@@ -583,6 +451,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     intent_type = intent["type"]
     term = (intent["term"] or "").lower().strip()
 
+    # SPECIFIC + DETAILS gebruiken dezelfde term/synoniemen
     if intent_type in {"SPECIFIC_COST", "DETAILS"} and term:
         patterns: list[str] = [re.escape(term)]
         used_csv_synonyms = False
@@ -610,10 +479,12 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     if df.empty:
         return None, None
 
+    # beschikbare jaren in df
     available_years_in_df = sorted(
         {int(y) for y in pd.to_numeric(df.get("Year_Clean", []), errors="coerce").dropna()}
     )
 
+    # jaren-filter
     str_years = [str(y) for y in years] if years else None
     if str_years and "Year_Clean" in df.columns:
         df_current_range = df[df["Year_Clean"].astype(str).isin(str_years)]
@@ -630,6 +501,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     yrs_label = ", ".join(str(y) for y in years) if years else "alle jaren"
     lines: list[str] = []
 
+    # Helper voor trendtekst
     def trend_text(curr: float, prev: float, label: str) -> str:
         if abs(prev) < 1e-6:
             return f"{label} in het vorige jaar was nul of verwaarloosbaar; een percentage is daardoor niet zinvol."
@@ -641,6 +513,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             f"({pct:+.1f}% ten opzichte van het jaar ervoor)."
         )
 
+    # --- DETAILS-drill-down: toptransacties ---
     if intent_type == "DETAILS":
         df_sorted = df_current_range.copy()
         df_sorted["AbsAmount"] = df_sorted["AmountDC_num"].abs()
@@ -666,6 +539,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
+    # --- TOTAL / SPECIFIC met automatische vergelijking A ---
     if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
         if years and len(years) == 1 and "Year_Clean" in df.columns:
             cur_year = years[0]
@@ -734,6 +608,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
+    # --- TREND SPECIFIEK (A) ---
     if intent_type == "TREND":
         lines.append(f"### Verloop ({yrs_label}) – samenvatting uit transacties")
         if "Year_Clean" in df_current_range.columns:
@@ -763,6 +638,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
+    # --- CHAT of overige: simpele samenvatting uit CSV ---
     lines.append(f"### Cijfers uit transacties ({yrs_label})")
     lines.append(f"Totaal: € {total:,.2f}")
     return "\n".join(lines), total
@@ -815,108 +691,16 @@ def build_conversation_snippet(max_turns: int = 2) -> str:
 
 
 # ==========================================
-# 3B. UI HULPFUNCTIE: ESCALATIE
-# ==========================================
-
-ESCALATION_PHRASE = "Wilt u dat Finny uw vraag en relevante gegevens doorstuurt naar uw accountant?"
-
-
-def render_assistant_extras(content: str, idx: int):
-    """
-    Toon alleen de escalatie-opties onder een Finny-antwoord.
-    Geen disclaimer en geen thumbs per antwoord.
-    """
-    if ESCALATION_PHRASE not in content:
-        return
-
-    consent = st.session_state.get("escalation_consent", None)
-
-    # 1. Nog geen keuze gemaakt in deze sessie -> vraag eenmalig toestemming
-    if consent is None:
-        st.info(
-            "Finny kan deze vraag met uw toestemming doorsturen naar uw accountant, "
-            "inclusief relevante financiële context."
-        )
-        c1, c2 = st.columns(2)
-        with c1:
-            yes = st.button(
-                "Ja, doorsturen naar accountant",
-                key=f"escalate_yes_{idx}",
-            )
-        with c2:
-            no = st.button(
-                "Nee, liever niet",
-                key=f"escalate_no_{idx}",
-            )
-
-        if yes:
-            st.session_state.escalation_consent = True
-            log_event(
-                ESCALATION_LOG,
-                "escalation_consent_granted",
-                {},
-            )
-            if idx not in st.session_state.escalated_message_ids:
-                st.session_state.escalated_message_ids.append(idx)
-                log_event(
-                    ESCALATION_LOG,
-                    "escalation_approved",
-                    {"message_index": idx, "snippet": content[:300]},
-                )
-            st.success(
-                "Uw vraag is door Finny gemarkeerd om naar uw accountant te worden doorgestuurd."
-            )
-
-        if no:
-            st.session_state.escalation_consent = False
-            log_event(
-                ESCALATION_LOG,
-                "escalation_consent_declined",
-                {},
-            )
-            st.info(
-                "Begrepen, vragen in dit gesprek worden niet door Finny naar uw accountant doorgestuurd."
-            )
-
-    # 2. Toestemming al gegeven: automatisch markeren, geen nieuwe pop-up
-    elif consent is True:
-        st.info(
-            "Deze vraag wordt volgens uw eerdere toestemming door Finny gemarkeerd "
-            "om naar uw accountant te worden doorgestuurd."
-        )
-        if idx not in st.session_state.escalated_message_ids:
-            st.session_state.escalated_message_ids.append(idx)
-            log_event(
-                ESCALATION_LOG,
-                "escalation_auto_approved",
-                {"message_index": idx, "snippet": content[:300]},
-            )
-
-    # 3. Toestemming eerder geweigerd: alleen uitleg tonen
-    else:
-        st.info(
-            "U heeft eerder aangegeven dat u vragen in dit gesprek niet wilt doorsturen "
-            "naar uw accountant."
-        )
-
-
-# ==========================================
 # 4. MAIN UI
 # ==========================================
 
 if check_password():
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
     if not api_key:
-        st.error("Geen OPENAI_API_KEY gevonden in .env of omgeving.")
+        st.error("Geen OPENAI_API_KEY gevonden in .env of Streamlit secrets.")
         st.stop()
-
     client = OpenAI(api_key=api_key)
     data = load_data()
-
-    # Juridische gateway vóór toegang tot app
-    if not st.session_state.legal_accepted:
-        show_legal_gateway()
-        st.stop()
 
     # SIDEBAR
     with st.sidebar:
@@ -938,10 +722,6 @@ if check_password():
             start_new_conversation()
             st.rerun()
 
-        # Gesprek afronden-knop in de sidebar
-        if st.button("Gesprek afronden", use_container_width=True):
-            st.session_state.conversation_finished = True
-
         st.markdown("---")
         opts = ["intro", "chat", "history", "share"]
         cur = st.session_state.current_view
@@ -959,30 +739,6 @@ if check_password():
         )
         if choice != st.session_state.current_view:
             st.session_state.current_view = choice
-            st.rerun()
-
-        # Privacy-instellingen
-        st.markdown("---")
-        st.subheader("Privacy & profiel")
-
-        current = st.session_state.profile_consent
-        new = st.toggle(
-            "Persoonlijk klantprofiel",
-            value=current,
-            help=(
-                "Sta Finny toe uw gegevens te gebruiken voor een persoonlijk klantprofiel "
-                "(gepersonaliseerde inzichten op basis van eerdere interacties)."
-            ),
-        )
-
-        if new != current:
-            st.session_state.profile_consent = new
-            status = "granted" if new else "revoked"
-            log_event(
-                CONSENT_LOG,
-                f"profile_consent_{status}",
-                {"new_value": new},
-            )
             st.rerun()
 
     view = st.session_state.current_view
@@ -1049,7 +805,6 @@ if check_password():
     # CHAT
     elif view == "chat":
         st.title("Finny Demo")
-
         finny_avatar = main_logo if os.path.exists(main_logo) else "🤖"
 
         if st.session_state.user_avatar_path and os.path.exists(
@@ -1059,31 +814,23 @@ if check_password():
         else:
             user_avatar = "👤"
 
-        # Bestaande berichten renderen met alleen escalatie-extra's
-        for idx, m in enumerate(st.session_state.messages):
-            role = m.get("role", "assistant")
-            content = m.get("content", "")
-            with st.chat_message(
-                role,
-                avatar=finny_avatar if role == "assistant" else user_avatar,
-            ):
-                st.write(content)
-                if role == "assistant":
-                    render_assistant_extras(content, idx)
+        for m in st.session_state.messages:
+            st.chat_message(
+                m["role"],
+                avatar=finny_avatar if m["role"] == "assistant" else user_avatar,
+            ).write(m["content"])
 
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
-
         if prompt:
-            st.session_state.conversation_finished = False
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.chat_message("user", avatar=user_avatar).write(prompt)
 
             with st.chat_message("assistant", avatar=finny_avatar):
-                with st.spinner("Even nadenken..."):
+                with st.spinner("Even rekenen..."):
                     effective_question = prompt
                     pending = st.session_state.get("pending_followup")
-                    followup_mode = "NONE"
 
+                    # 1. Eerst: expliciete ja/nee op een Finny-vraag
                     if pending:
                         follow_kind = classify_followup_answer(prompt)
                         if follow_kind == "CONFIRM":
@@ -1112,6 +859,7 @@ if check_password():
                             st.session_state.pending_followup = None
                             effective_question = prompt
 
+                    # 2. Dan: generieke korte vervolgvragen (B 2.0)
                     if st.session_state.get("pending_followup") is None:
                         synthetic = detect_simple_followup(
                             prompt,
@@ -1119,21 +867,10 @@ if check_password():
                             data,
                         )
                         if synthetic:
-                            if synthetic.startswith("[FOLLOWUP_EXPLAIN]"):
-                                followup_mode = "EXPLAIN_ONLY"
                             effective_question = synthetic
 
-                    if followup_mode == "EXPLAIN_ONLY":
-                        analysis = {
-                            "intent": {"type": "CHAT", "term": ""},
-                            "years": [],
-                            "source": "GESPREK",
-                            "context": "",
-                            "total": None,
-                        }
-                    else:
-                        analysis = build_analysis(client, effective_question, data)
-
+                    # --- BUILD ANALYSIS ---
+                    analysis = build_analysis(client, effective_question, data)
                     st.session_state.last_analysis = analysis
 
                     context = analysis["context"]
@@ -1213,11 +950,7 @@ if check_password():
                         allow_generic_followup = True
 
                     followup_instruction = ""
-                    if (
-                        followup_mode != "EXPLAIN_ONLY"
-                        and intent["type"] == "TREND"
-                        and "winst" in effective_question.lower()
-                    ):
+                    if intent["type"] == "TREND" and "winst" in effective_question.lower():
                         yrs = years or [data.get("latest_year", max(AVAILABLE_YEARS))]
                         yrs = [y for y in yrs if isinstance(y, int)]
                         st.session_state.pending_followup = {
@@ -1233,29 +966,17 @@ if check_password():
                         if not allow_generic_followup:
                             followup_instruction = ""
 
-                    # Alleen eerdere Q/A als er profieltoestemming is
-                    if st.session_state.profile_consent:
-                        conversation_snippet = build_conversation_snippet(max_turns=2)
-                    else:
-                        conversation_snippet = ""
-
-                    if followup_mode == "EXPLAIN_ONLY":
-                        context_text = (
-                            "LET OP: Je mag GEEN nieuwe cijfers uit andere bronnen gebruiken. "
-                            "Baseer je alleen op eerder genoemde bedragen in het gesprek.\n\n"
-                        )
-                    else:
-                        context_text = context
+                    conversation_snippet = build_conversation_snippet(max_turns=2)
 
                     system_prompt = (
                         "Je bent Finny, een financiële assistent voor ondernemers.\n\n"
                         "GESPREK TOT NU TOE:\n"
                         f"{conversation_snippet or 'Nog geen eerdere vragen.'}\n\n"
-                        f"CONTEXT (FEITEN – gebruik dit als waarheid waar van toepassing):\n{context_text}\n\n"
-                        f"INTENTIE: type={intent['type']}, term='{intent.get('term', '')}'.\n\n"
+                        f"CONTEXT (FEITEN – gebruik dit als waarheid):\n{context}\n\n"
+                        f"INTENTIE: type={intent['type']}, term='{intent['term']}'.\n\n"
                         "REGELS VOOR JE ANTWOORD:\n"
                         f"1. Geef een direct antwoord op de vraag in hooguit {max_sentences} korte zinnen.\n"
-                        "2. Noem concrete bedragen als die in de context of in het gesprek staan.\n"
+                        "2. Noem concrete bedragen als die in de context staan.\n"
                         "3. Verzin NOOIT cijfers of jaartallen; als iets ontbreekt of onduidelijk is, zeg dat eerlijk.\n"
                         f"4. {tone}\n"
                         f"{rule5}"
@@ -1289,55 +1010,6 @@ if check_password():
                             "answer": reply,
                         }
                     )
-
-                    # Extra's direct tonen voor deze beurt (alleen escalatie)
-                    current_idx = len(st.session_state.messages) - 1
-                    render_assistant_extras(reply, current_idx)
-
-        # ===== GESPREK AFRONDEN + FEEDBACK =====
-        if (
-            st.session_state.conversation_finished
-            and not st.session_state.session_feedback_given
-            and any(m.get("role") == "assistant" for m in st.session_state.messages)
-        ):
-            st.markdown("---")
-            st.markdown("**Heeft dit gesprek je geholpen?**")
-            col1, col2 = st.columns(2)
-            with col1:
-                good = st.button("👍 Ja", key="conv_fb_up")
-            with col2:
-                bad = st.button("👎 Niet helemaal", key="conv_fb_down")
-
-            if good:
-                log_event(
-                    FEEDBACK_LOG,
-                    "conversation_feedback",
-                    {"rating": "up"},
-                )
-                st.session_state.session_feedback_given = True
-
-            if bad:
-                st.session_state.show_conv_feedback_input = True
-
-            if (
-                st.session_state.show_conv_feedback_input
-                and not st.session_state.session_feedback_given
-            ):
-                reason = st.text_area(
-                    "Waar schoot Finny tekort in dit gesprek?",
-                    key="conv_fb_reason",
-                )
-                if st.button("Verstuur feedback", key="conv_fb_send"):
-                    log_event(
-                        FEEDBACK_LOG,
-                        "conversation_feedback",
-                        {
-                            "rating": "down",
-                            "reason": reason,
-                        },
-                    )
-                    st.session_state.session_feedback_given = True
-                    st.session_state.show_conv_feedback_input = False
 
     # HISTORY
     elif view == "history":
@@ -1375,28 +1047,8 @@ if check_password():
 
             if submit_share:
                 for i, v in checks.items():
-                    st.session_state.conversations[i]["shared_with_accountant"] = bool(v)
+                    st.session_state.conversations[i]["shared_with_accountant"] = bool(
+                        v
+                    )
                 st.success("Selectie bijgewerkt.")
                 st.rerun()
-
-    # ===== VASTE FOOTER ONDERIN SCHERM =====
-    footer_html = """
-    <style>
-    #finny-footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        padding: 4px 16px;
-        background-color: rgba(248, 249, 250, 0.95);
-        font-size: 11px;
-        color: #6c757d;
-        text-align: center;
-        z-index: 1000;
-    }
-    </style>
-    <div id="finny-footer">
-        Finny kan fouten maken. Controleer belangrijke informatie altijd zelf en raadpleeg bij twijfel uw accountant.
-    </div>
-    """
-    st.markdown(footer_html, unsafe_allow_html=True)
