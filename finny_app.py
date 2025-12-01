@@ -94,7 +94,7 @@ if "last_analysis" not in st.session_state:
 if "pending_followup" not in st.session_state:
     st.session_state.pending_followup = None
 if "conversation_log" not in st.session_state:
-    st.session_state.conversation_log = []  # gestructureerd logboek van Q&A
+    st.session_state.conversation_log = []  # gestructureerd logboek
 
 
 def check_password() -> bool:
@@ -199,7 +199,6 @@ def load_data():
                 )
             data["syn"] = syn
         except Exception:
-            # Geen harde error in demo; we vallen automatisch terug op FALLBACK_SYNONYMS
             data["syn"] = None
 
     # Jaarrekening PDFs
@@ -240,9 +239,27 @@ def load_data():
 # ==========================================
 def classify_intent(client: OpenAI, question: str) -> dict:
     """
-    type ∈ {TOTAL_COST, SPECIFIC_COST, TREND, CHAT}
-    (geen jaartal-detectie hier)
+    type ∈ {TOTAL_COST, SPECIFIC_COST, TREND, CHAT, DETAILS}
+    DETAILS = drill-down naar transacties op basis van vorige inhoudelijke vraag.
     """
+    q_lower = question.lower()
+
+    # 1. Detail-triggers: transacties / boekingen / specificatie
+    detail_triggers = [
+        "transactie", "transacties", "boeking", "boekingen",
+        "mutatie", "mutaties", "bonnetje", "bonnetjes",
+        "factuur", "facturen", "specificatie", "specificaties",
+        "details", "drilldown", "drill-down"
+    ]
+    if any(t in q_lower for t in detail_triggers):
+        last = st.session_state.get("last_analysis") or {}
+        last_intent = last.get("intent") or {}
+        last_type = (last_intent.get("type") or "").upper()
+        last_term = (last_intent.get("term") or "").strip()
+        if last_type in {"SPECIFIC_COST", "TOTAL_COST", "TREND"} and last_term:
+            return {"type": "DETAILS", "term": last_term}
+
+    # 2. Normale LLM-router
     system = (
         "Je bent een router voor de Finny demo.\n"
         "Analyseer de vraag van een ondernemer en geef ALLEEN JSON terug met:\n"
@@ -283,7 +300,7 @@ def extract_years(question: str, latest_year: int, intent_type: str) -> list[int
     if years:
         return years
 
-    if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
+    if intent_type in {"TOTAL_COST", "SPECIFIC_COST", "DETAILS"}:
         return [latest_year]
     if intent_type == "TREND":
         yrs = [y for y in AVAILABLE_YEARS if y <= latest_year]
@@ -292,9 +309,6 @@ def extract_years(question: str, latest_year: int, intent_type: str) -> list[int
 
 
 def _extend_patterns_with_fallback(term: str, patterns: list[str]) -> list[str]:
-    """
-    Voeg fallback-synoniemen toe als de CSV niets oplevert (D).
-    """
     term_l = term.lower()
     extra = []
     for key, syns in FALLBACK_SYNONYMS.items():
@@ -306,10 +320,6 @@ def _extend_patterns_with_fallback(term: str, patterns: list[str]) -> list[str]:
 
 
 def classify_followup_answer(text: str) -> str:
-    """
-    Classificeer een kort antwoord als bevestiging / afwijzing / anders.
-    Retourneert: 'CONFIRM', 'DECLINE' of 'OTHER'.
-    """
     t = text.strip().lower()
     if not t:
         return "OTHER"
@@ -324,10 +334,6 @@ def classify_followup_answer(text: str) -> str:
 
 
 def extract_optional_topic_from_text(text: str) -> str | None:
-    """
-    Kijk of er een bekende kostencategorie in de tekst genoemd wordt
-    (auto, telefoon, personeel, etc.). Retourneert de key of None.
-    """
     t = text.lower()
     for key in FALLBACK_SYNONYMS.keys():
         if key in t:
@@ -339,7 +345,6 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     """
     Optie B 2.0: herken korte vervolgvragen zoals 'Hoe komt dat?'
     en vertaal ze naar een volledige vraag op basis van de vorige analyse.
-    Retourneert een synthetische vraag of None.
     """
     if not last_analysis:
         return None
@@ -349,11 +354,9 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
         return None
 
     words = t.split()
-    # langere vragen behandelen we als nieuwe, zelfstandige vraag
     if len(words) > 8:
         return None
 
-    # als er al expliciet een jaar in staat, laten we het aan de normale router
     if re.search(r"\b20[0-9]{2}\b", t):
         return None
 
@@ -362,7 +365,6 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     years = last_analysis.get("years") or [data.get("latest_year", max(AVAILABLE_YEARS))]
     years = [y for y in years if isinstance(y, int)]
 
-    # Uitlegvraag: 'hoe komt dat', 'waarom', 'hoe kan dat', 'hoezo'
     if any(p in t for p in ["hoe komt dat", "waarom", "hoe kan dat", "hoezo"]):
         if years:
             jaar_label = f" tussen {min(years)} en {max(years)}"
@@ -381,16 +383,12 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
             "Gebruik de belangrijkste kosten- en opbrengstposten uit de cijfers."
         )
 
-    # hier kun je later andere patronen toevoegen (bijv. 'en verder?')
-
     return None
 
 
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
     """
-    Slimmere logica (A) + fallback-synoniemen (D)
-    - Bij één jaar vergelijken we automatisch met het voorafgaande jaar (indien beschikbaar).
-    - Bij TREND maken we een per-jaar overzicht plus korte trend-samenvatting.
+    Slimmere logica (A) + fallback-synoniemen (D) + DETAILS-drill-down.
     """
     base_df = data.get("trans")
     syn = data.get("syn")
@@ -412,21 +410,21 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
         ]
 
     # zorg dat Year_Clean bestaat
-    if "Year_Clean" not in df.columns:
-        if "Finny_Year" in df.columns:
-            df["Year_Clean"] = (
-                df["Finny_Year"].astype(str).str.split(".").str[0].str.strip()
-            )
+    if "Year_Clean" not in df.columns and "Finny_Year" in df.columns:
+        df["Year_Clean"] = (
+            df["Finny_Year"].astype(str).str.split(".").str[0].str.strip()
+        )
+
+    df["AmountDC_num"] = pd.to_numeric(df.get("AmountDC_num", 0), errors="coerce").fillna(0.0)
 
     intent_type = intent["type"]
     term = (intent["term"] or "").lower().strip()
 
-    # --- SPECIFIEKE POST: synoniemen + fallback (D) ---
-    if intent_type == "SPECIFIC_COST" and term:
+    # SPECIFIC + DETAILS gebruiken dezelfde term/synoniemen
+    if intent_type in {"SPECIFIC_COST", "DETAILS"} and term:
         patterns: list[str] = [re.escape(term)]
         used_csv_synonyms = False
 
-        # Synoniemenbestand
         if syn is not None and "Synoniem_Clean" in syn.columns:
             mask = syn["Synoniem_Clean"].astype(str).str.contains(term, case=False, na=False)
             if mask.any():
@@ -440,7 +438,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
                             for v in syn.loc[mask, col].dropna().unique().tolist()
                         )
 
-        # Fallback als CSV niets oplevert
         if not used_csv_synonyms:
             patterns = _extend_patterns_with_fallback(term, patterns)
 
@@ -448,13 +445,10 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
         if "UniversalSearch" in df.columns and pat:
             df = df[df["UniversalSearch"].astype(str).str.contains(pat, na=False)]
 
-    # TOTAL_COST: geen extra filter (alles in df)
-    # TREND: alles in df, later per jaar
-
     if df.empty:
         return None, None
 
-    # --- Bepaal jaren in de gefilterde set ---
+    # beschikbare jaren in df
     available_years_in_df = sorted(
         {int(y) for y in pd.to_numeric(df.get("Year_Clean", []), errors="coerce").dropna()}
     )
@@ -471,7 +465,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
     total = float(df_current_range["AmountDC_num"].sum())
     if abs(total) < 1e-6:
-        # QC: saldo 0 → laat AI liever PDF gebruiken
         return None, None
 
     yrs_label = ", ".join(str(y) for y in years) if years else "alle jaren"
@@ -489,12 +482,37 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             f"({pct:+.1f}% ten opzichte van het jaar ervoor)."
         )
 
+    # --- NIEUW: DETAILS-drill-down: altijd toptransacties tonen ---
+    if intent_type == "DETAILS":
+        df_sorted = df_current_range.copy()
+        df_sorted["AbsAmount"] = df_sorted["AmountDC_num"].abs()
+        top_trans = df_sorted.sort_values(by="AbsAmount", ascending=False).head(10)
+
+        lines.append(
+            f"### Top transacties voor '{term or 'geselecteerde kosten'}' ({yrs_label})"
+        )
+        for _, row in top_trans.iterrows():
+            desc = str(row.get("Description", "") or "").strip() or "Onbekend"
+            acc = str(row.get("AccountName", "") or "").strip()
+            date = str(row.get("Date", "") or "").strip()
+            amt = float(row.get("AmountDC_num", 0.0))
+
+            label_parts = []
+            if date:
+                label_parts.append(date)
+            if acc:
+                label_parts.append(acc)
+            label = " | ".join(label_parts) if label_parts else "Transactie"
+
+            lines.append(f"- {label}: {desc} → € {amt:,.2f}")
+
+        return "\n".join(lines), total
+
     # --- TOTAL / SPECIFIC met automatische vergelijking A ---
     if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
-        # standaard: enkel jaar → vergelijk met vorig jaar
         if years and len(years) == 1 and "Year_Clean" in df.columns:
             cur_year = years[0]
-            df_cur = df[df["Year_Clean"].astype(str) == str(cur_year)]
+            df_cur = df_current_range[df_current_range["Year_Clean"].astype(str) == str(cur_year)]
             total_cur = float(df_cur["AmountDC_num"].sum())
 
             prev_year = cur_year - 1 if (cur_year - 1) in available_years_in_df else None
@@ -514,7 +532,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             if total_prev is not None:
                 lines.append(prev_line)
 
-            # Eventueel top 5 posten
             if "Description" in df_cur.columns:
                 top = (
                     df_cur.groupby("Description")["AmountDC_num"]
@@ -530,7 +547,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
             return "\n".join(lines), total_cur
 
-        # Meerdere jaren of geen jaartal: werk als eenvoudige som over range
         label = "totale kosten" if intent_type == "TOTAL_COST" else (term or "geselecteerde kosten")
         lines.append(f"### {label.capitalize()} ({yrs_label})")
         lines.append(f"Totaal: € {total:,.2f}")
@@ -627,10 +643,6 @@ def build_analysis(client: OpenAI, question: str, data: dict) -> dict:
 
 
 def build_conversation_snippet(max_turns: int = 2) -> str:
-    """
-    Maak een korte samenvatting van de laatste Q&A's uit het gesprek
-    voor in de system prompt.
-    """
     log = st.session_state.get("conversation_log", [])
     if not log:
         return ""
@@ -778,21 +790,18 @@ if check_password():
 
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
         if prompt:
-            # Toon altijd de ruwe input van de gebruiker
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.chat_message("user", avatar=user_avatar).write(prompt)
 
             with st.chat_message("assistant", avatar=finny_avatar):
                 with st.spinner("Even rekenen..."):
-                    # --- FOLLOW-UP LOGICA ---
                     effective_question = prompt
                     pending = st.session_state.get("pending_followup")
 
-                    # 1. Eerst: ja/nee op een expliciete Finny-vraag (pending_followup)
+                    # 1. Eerst: expliciete ja/nee op een Finny-vraag
                     if pending:
                         follow_kind = classify_followup_answer(prompt)
                         if follow_kind == "CONFIRM":
-                            # optioneel nieuw onderwerp uit de tekst
                             topic_override = extract_optional_topic_from_text(prompt)
                             topic = topic_override or pending.get("topic", "winst")
 
@@ -810,18 +819,15 @@ if check_password():
                                 f"{topic}) hebben de grootste impact gehad op de "
                                 f"ontwikkeling van de winst{jaar_label}?"
                             )
-                            # Deze follow-up is nu afgehandeld
                             st.session_state.pending_followup = None
                         elif follow_kind == "DECLINE":
-                            # Gebruiker wil de follow-up niet; reset pending en ga door
                             st.session_state.pending_followup = None
                             effective_question = prompt
                         else:
-                            # Onvoldoende duidelijke ja/nee; beschouw als nieuwe vraag
                             st.session_state.pending_followup = None
                             effective_question = prompt
 
-                    # 2. Daarna: generieke korte vervolgvragen op basis van last_analysis (Optie B 2.0)
+                    # 2. Dan: generieke korte vervolgvragen (B 2.0)
                     if st.session_state.get("pending_followup") is None:
                         synthetic = detect_simple_followup(
                             prompt,
@@ -869,7 +875,7 @@ if check_password():
                     elif detail == "Uitgebreid":
                         base_max_sentences = 4
                     else:
-                        base_max_sentences = 2  # standaard
+                        base_max_sentences = 2
 
                     prompt_lower = effective_question.lower()
                     word_count = len(prompt_lower.split())
@@ -911,7 +917,6 @@ if check_password():
                         )
                         allow_generic_followup = True
 
-                    # --- GERichte pending follow-up zetten bij TREND op winst ---
                     followup_instruction = ""
                     if intent["type"] == "TREND" and "winst" in effective_question.lower():
                         yrs = years or [data.get("latest_year", max(AVAILABLE_YEARS))]
@@ -926,12 +931,9 @@ if check_password():
                             "'Wil je dat ik ook laat zien welke kosten hier het meest aan bijdragen?'\n"
                         )
                     else:
-                        # alleen generieke follow-up als dat volgens regel5 mag
                         if not allow_generic_followup:
                             followup_instruction = ""
-                        # pending_followup blijft wat hij al was (kan None zijn)
 
-                    # --- GESPREKSSAMENVATTING ---
                     conversation_snippet = build_conversation_snippet(max_turns=2)
 
                     system_prompt = (
@@ -967,7 +969,6 @@ if check_password():
                         {"role": "assistant", "content": reply}
                     )
 
-                    # --- LOGBOEK BIJWERKEN (conversation_log) ---
                     st.session_state.conversation_log.append(
                         {
                             "timestamp": datetime.now().isoformat(),
