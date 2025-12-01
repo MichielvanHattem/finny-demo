@@ -938,7 +938,7 @@ if check_password():
             start_new_conversation()
             st.rerun()
 
-        # Gesprek afronden-knop nu in de sidebar, vlak bij Nieuw gesprek
+        # Gesprek afronden-knop in de sidebar
         if st.button("Gesprek afronden", use_container_width=True):
             st.session_state.conversation_finished = True
 
@@ -984,11 +984,6 @@ if check_password():
                 {"new_value": new},
             )
             st.rerun()
-
-        st.caption(
-            "U kunt deze toestemming hier op elk moment intrekken of verlenen. "
-            "Wijzigingen worden direct opgeslagen."
-        )
 
     view = st.session_state.current_view
 
@@ -1344,11 +1339,6 @@ if check_password():
                     st.session_state.session_feedback_given = True
                     st.session_state.show_conv_feedback_input = False
 
-        # rustige disclaimer onderin, zoals ChatGPT
-        st.caption(
-            "Finny kan fouten maken. Controleer belangrijke informatie altijd zelf en raadpleeg bij twijfel uw accountant."
-        )
-
     # HISTORY
     elif view == "history":
         st.title("Gesprekken")
@@ -1388,3 +1378,25 @@ if check_password():
                     st.session_state.conversations[i]["shared_with_accountant"] = bool(v)
                 st.success("Selectie bijgewerkt.")
                 st.rerun()
+
+    # ===== VASTE FOOTER ONDERIN SCHERM =====
+    footer_html = """
+    <style>
+    #finny-footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        padding: 4px 16px;
+        background-color: rgba(248, 249, 250, 0.95);
+        font-size: 11px;
+        color: #6c757d;
+        text-align: center;
+        z-index: 1000;
+    }
+    </style>
+    <div id="finny-footer">
+        Finny kan fouten maken. Controleer belangrijke informatie altijd zelf en raadpleeg bij twijfel uw accountant.
+    </div>
+    """
+    st.markdown(footer_html, unsafe_allow_html=True)
