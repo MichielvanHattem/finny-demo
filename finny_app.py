@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 # ==========================================
 # 0. SETUP & CONFIG
 # ==========================================
+
 logo_files = glob.glob("finny_logo.png") + glob.glob("*.png") + glob.glob("*.jpg")
 main_logo = "finny_logo.png" if os.path.exists("finny_logo.png") else (
     logo_files[0] if logo_files else "💰"
@@ -22,7 +23,7 @@ load_dotenv()
 
 AVAILABLE_YEARS = [2022, 2023, 2024]
 
-# Kleine fallback-synoniemenmapping in code (D)
+# --- FALLBACK-SYNONIEMEN (Optie D) ---
 FALLBACK_SYNONYMS = {
     "auto": [
         "auto", "autokosten", "bedrijfsauto", "lease", "leaseauto", "brandstof",
@@ -66,7 +67,6 @@ FALLBACK_SYNONYMS = {
     ],
 }
 
-# --- FOLLOW-UP CONFIG ---
 YES_WORDS = {
     "ja", "ja.", "ja!", "ja graag", "graag", "zeker", "prima",
     "is goed", "doe maar", "ok", "oke", "okay"
@@ -94,8 +94,12 @@ if "last_analysis" not in st.session_state:
 if "pending_followup" not in st.session_state:
     st.session_state.pending_followup = None
 if "conversation_log" not in st.session_state:
-    st.session_state.conversation_log = []  # gestructureerd logboek
+    st.session_state.conversation_log = []
 
+
+# ==========================================
+# 1. AUTH & CONVERSATIONS
+# ==========================================
 
 def check_password() -> bool:
     if "password_correct" not in st.session_state:
@@ -136,6 +140,7 @@ def start_new_conversation() -> None:
 # ==========================================
 # 2. DATA LOAD
 # ==========================================
+
 @st.cache_data(ttl=3600)
 def load_data():
     data = {
@@ -164,7 +169,6 @@ def load_data():
                         y for y in AVAILABLE_YEARS if y <= data["latest_year"]
                     )
 
-            # noodzakelijke kolommen
             for col in [
                 "Description",
                 "AccountName",
@@ -235,61 +239,91 @@ def load_data():
 
 
 # ==========================================
-# 3. SANDWICH-ARCHITECTUUR & FOLLOW-UP HELPERS
+# 3. ROUTER & CSV-LOGICA (SANDWICH)
 # ==========================================
+
 def classify_intent(client: OpenAI, question: str) -> dict:
     """
-    type ∈ {TOTAL_COST, SPECIFIC_COST, TREND, CHAT, DETAILS}
-    DETAILS = drill-down naar transacties op basis van vorige inhoudelijke vraag.
+    Context-gevoelige router.
+
+    Geeft terug:
+    {
+      "type": "TOTAL_COST" | "SPECIFIC_COST" | "TREND" | "DETAILS" | "CHAT",
+      "term": "<onderwerp>",
+      "relation": "NEW" | "FOLLOW_UP"
+    }
     """
-    q_lower = question.lower()
+    last = st.session_state.get("last_analysis") or {}
+    last_intent = last.get("intent") or {}
+    last_type = last_intent.get("type")
+    last_term = last_intent.get("term")
+    last_years = last.get("years")
 
-    # 1. Detail-triggers: transacties / boekingen / specificatie
-    detail_triggers = [
-        "transactie", "transacties", "boeking", "boekingen",
-        "mutatie", "mutaties", "bonnetje", "bonnetjes",
-        "factuur", "facturen", "specificatie", "specificaties",
-        "details", "drilldown", "drill-down"
-    ]
-    if any(t in q_lower for t in detail_triggers):
-        last = st.session_state.get("last_analysis") or {}
-        last_intent = last.get("intent") or {}
-        last_type = (last_intent.get("type") or "").upper()
-        last_term = (last_intent.get("term") or "").strip()
-        if last_type in {"SPECIFIC_COST", "TOTAL_COST", "TREND"} and last_term:
-            return {"type": "DETAILS", "term": last_term}
+    last_summary = {
+        "last_type": last_type,
+        "last_term": last_term,
+        "last_years": last_years,
+    }
 
-    # 2. Normale LLM-router
     system = (
         "Je bent een router voor de Finny demo.\n"
-        "Analyseer de vraag van een ondernemer en geef ALLEEN JSON terug met:\n"
+        "Je krijgt een nieuwe vraag van een ondernemer én een korte samenvatting "
+        "van de vorige analyse.\n\n"
+        "Je taak:\n"
+        "- Bepaal of de nieuwe vraag een 'NEW' vraag is of een 'FOLLOW_UP' op de vorige.\n"
+        "- Bepaal het soort analyse in 'analysis_type':\n"
+        "    - 'TOTAL_COST'   → totaal van kosten/uitgaven/resultaat in een periode\n"
+        "    - 'SPECIFIC_COST'→ specifieke post (telefoon, auto, personeel, huur, etc.)\n"
+        "    - 'TREND'        → verloop/vergelijking over jaren\n"
+        "    - 'DETAILS'      → drill-down / individuele transacties / specificatie\n"
+        "    - 'CHAT'         → algemene uitleg of praat zonder directe cijferanalyse\n"
+        "- Bepaal 'term' als het onderwerp van de vraag in gewone Nederlandse woorden.\n\n"
+        "Hints:\n"
+        "- Vragen naar transacties, bonnen, facturen of 'details' horen meestal bij 'DETAILS'.\n"
+        "- Vragen als 'hoe komt dat', 'waarom', of 'per maand daarvan' zijn vaak 'FOLLOW_UP' "
+        "op de vorige analyse.\n"
+        "- Als de vraag duidelijk de winst / omzet / kosten per periode wil weten, gebruik "
+        "'TOTAL_COST' of 'SPECIFIC_COST'.\n"
+        "- Als de vraag gaat over stijging/daling over jaren, gebruik 'TREND'.\n\n"
+        "Geef ALLEEN een JSON-object terug met:\n"
         "{\n"
-        '  \"type\": \"TOTAL_COST\" | \"SPECIFIC_COST\" | \"TREND\" | \"CHAT\",\n'
-        '  \"term\": \"<hoofdonderwerp of kostenpost, leeg bij TOTAL/CHAT>\"\n'
-        "}\n\n"
-        "- TOTAL_COST: totaal van kosten/uitgaven/resultaat in een periode.\n"
-        "- SPECIFIC_COST: specifieke post zoals telefoon, auto, huur, personeel.\n"
-        "- TREND: verloop/vergelijking over jaren, stijging/daling.\n"
-        "- CHAT: uitleg, begroetingen, algemene vragen.\n"
-        "Gebruik Nederlandse termen zoals de gebruiker.\n"
+        '  \"relation\": \"NEW\" | \"FOLLOW_UP\",\n'
+        '  \"analysis_type\": \"TOTAL_COST\" | \"SPECIFIC_COST\" | \"TREND\" | \"DETAILS\" | \"CHAT\",\n'
+        '  \"term\": \"<onderwerp in gewone woorden>\"\n'
+        "}\n"
     )
+
+    user_payload = {
+        "question": question,
+        "last_summary": last_summary,
+    }
+
     try:
         resp = client.chat.completions.create(
             model="gpt-4.1-mini",
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": question},
+                {
+                    "role": "user",
+                    "content": json.dumps(user_payload, ensure_ascii=False),
+                },
             ],
         )
         data = json.loads(resp.choices[0].message.content)
-        t = data.get("type", "CHAT")
+
+        analysis_type = (data.get("analysis_type") or data.get("type") or "CHAT").upper()
         term = (data.get("term") or "").strip()
-        if t not in {"TOTAL_COST", "SPECIFIC_COST", "TREND", "CHAT"}:
-            t = "CHAT"
-        return {"type": t, "term": term}
+        relation = (data.get("relation") or "NEW").upper()
+
+        if analysis_type not in {"TOTAL_COST", "SPECIFIC_COST", "TREND", "DETAILS", "CHAT"}:
+            analysis_type = "CHAT"
+        if relation not in {"NEW", "FOLLOW_UP"}:
+            relation = "NEW"
+
+        return {"type": analysis_type, "term": term, "relation": relation}
     except Exception:
-        return {"type": "CHAT", "term": ""}
+        return {"type": "CHAT", "term": "", "relation": "NEW"}
 
 
 def extract_years(question: str, latest_year: int, intent_type: str) -> list[int]:
@@ -323,9 +357,7 @@ def classify_followup_answer(text: str) -> str:
     t = text.strip().lower()
     if not t:
         return "OTHER"
-
     word_count = len(t.split())
-
     if any(w in t for w in YES_WORDS) and word_count <= 6:
         return "CONFIRM"
     if any(w in t for w in NO_WORDS) and word_count <= 6:
@@ -343,8 +375,8 @@ def extract_optional_topic_from_text(text: str) -> str | None:
 
 def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) -> str | None:
     """
-    Optie B 2.0: herken korte vervolgvragen zoals 'Hoe komt dat?'
-    en vertaal ze naar een volledige vraag op basis van de vorige analyse.
+    Beperkte follow-up: 'hoe komt dat' → uitleg vraag.
+    (Zwaardere interpretatie gebeurt in classify_intent.)
     """
     if not last_analysis:
         return None
@@ -354,7 +386,7 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
         return None
 
     words = t.split()
-    if len(words) > 8:
+    if len(words) > 12:
         return None
 
     if re.search(r"\b20[0-9]{2}\b", t):
@@ -388,7 +420,7 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
 
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
     """
-    Slimmere logica (A) + fallback-synoniemen (D) + DETAILS-drill-down.
+    CSV-aggregatie (Optie A + D) + DETAILS-drill-down.
     """
     base_df = data.get("trans")
     syn = data.get("syn")
@@ -397,7 +429,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
     df = base_df.copy()
 
-    # filter technische afsluitboekingen
+    # Filter technische afsluitboekingen / memoriaal
     if "Description" in df.columns:
         df = df[
             ~df["Description"]
@@ -409,7 +441,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             )
         ]
 
-    # zorg dat Year_Clean bestaat
     if "Year_Clean" not in df.columns and "Finny_Year" in df.columns:
         df["Year_Clean"] = (
             df["Finny_Year"].astype(str).str.split(".").str[0].str.strip()
@@ -448,12 +479,10 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     if df.empty:
         return None, None
 
-    # beschikbare jaren in df
     available_years_in_df = sorted(
         {int(y) for y in pd.to_numeric(df.get("Year_Clean", []), errors="coerce").dropna()}
     )
 
-    # jaren-filter
     str_years = [str(y) for y in years] if years else None
     if str_years and "Year_Clean" in df.columns:
         df_current_range = df[df["Year_Clean"].astype(str).isin(str_years)]
@@ -470,7 +499,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     yrs_label = ", ".join(str(y) for y in years) if years else "alle jaren"
     lines: list[str] = []
 
-    # Helper voor trendtekst
     def trend_text(curr: float, prev: float, label: str) -> str:
         if abs(prev) < 1e-6:
             return f"{label} in het vorige jaar was nul of verwaarloosbaar; een percentage is daardoor niet zinvol."
@@ -482,7 +510,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             f"({pct:+.1f}% ten opzichte van het jaar ervoor)."
         )
 
-    # --- NIEUW: DETAILS-drill-down: altijd toptransacties tonen ---
+    # DETAILS → drill-down toptransacties
     if intent_type == "DETAILS":
         df_sorted = df_current_range.copy()
         df_sorted["AbsAmount"] = df_sorted["AmountDC_num"].abs()
@@ -508,7 +536,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
-    # --- TOTAL / SPECIFIC met automatische vergelijking A ---
+    # TOTAL / SPECIFIC met rekenmeester
     if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
         if years and len(years) == 1 and "Year_Clean" in df.columns:
             cur_year = years[0]
@@ -547,6 +575,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
             return "\n".join(lines), total_cur
 
+        # meerdere jaren of geen specifiek jaar
         label = "totale kosten" if intent_type == "TOTAL_COST" else (term or "geselecteerde kosten")
         lines.append(f"### {label.capitalize()} ({yrs_label})")
         lines.append(f"Totaal: € {total:,.2f}")
@@ -577,7 +606,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
-    # --- TREND SPECIFIEK (A) ---
+    # TREND
     if intent_type == "TREND":
         lines.append(f"### Verloop ({yrs_label}) – samenvatting uit transacties")
         if "Year_Clean" in df_current_range.columns:
@@ -607,7 +636,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
-    # --- CHAT of overige: simpele samenvatting uit CSV ---
+    # CHAT of overige → simpele CSV-samenvatting
     lines.append(f"### Cijfers uit transacties ({yrs_label})")
     lines.append(f"Totaal: € {total:,.2f}")
     return "\n".join(lines), total
@@ -662,11 +691,13 @@ def build_conversation_snippet(max_turns: int = 2) -> str:
 # ==========================================
 # 4. MAIN UI
 # ==========================================
+
 if check_password():
     api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
     if not api_key:
         st.error("Geen OPENAI_API_KEY gevonden in .env of Streamlit secrets.")
         st.stop()
+
     client = OpenAI(api_key=api_key)
     data = load_data()
 
@@ -789,6 +820,7 @@ if check_password():
             ).write(m["content"])
 
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
+
         if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.chat_message("user", avatar=user_avatar).write(prompt)
@@ -798,7 +830,7 @@ if check_password():
                     effective_question = prompt
                     pending = st.session_state.get("pending_followup")
 
-                    # 1. Eerst: expliciete ja/nee op een Finny-vraag
+                    # 1. Expliete ja/nee op Finny-vraag
                     if pending:
                         follow_kind = classify_followup_answer(prompt)
                         if follow_kind == "CONFIRM":
@@ -827,7 +859,7 @@ if check_password():
                             st.session_state.pending_followup = None
                             effective_question = prompt
 
-                    # 2. Dan: generieke korte vervolgvragen (B 2.0)
+                    # 2. Beperkte follow-up op basis van laatste analyse
                     if st.session_state.get("pending_followup") is None:
                         synthetic = detect_simple_followup(
                             prompt,
@@ -837,7 +869,7 @@ if check_password():
                         if synthetic:
                             effective_question = synthetic
 
-                    # --- BUILD ANALYSIS ---
+                    # Analyse & context
                     analysis = build_analysis(client, effective_question, data)
                     st.session_state.last_analysis = analysis
 
@@ -1015,9 +1047,7 @@ if check_password():
 
             if submit_share:
                 for i, v in checks.items():
-                    st.session_state.conversations[i]["shared_with_accountant"] = bool(
-                        v
-                    )
+                    st.session_state.conversations[i]["shared_with_accountant"] = bool(v)
                 st.success("Selectie bijgewerkt.")
                 st.rerun()
 
