@@ -245,13 +245,6 @@ def load_data():
 def classify_intent(client: OpenAI, question: str) -> dict:
     """
     Context-gevoelige router.
-
-    Geeft terug:
-    {
-      "type": "TOTAL_COST" | "SPECIFIC_COST" | "TREND" | "DETAILS" | "CHAT",
-      "term": "<onderwerp>",
-      "relation": "NEW" | "FOLLOW_UP"
-    }
     """
     last = st.session_state.get("last_analysis") or {}
     last_intent = last.get("intent") or {}
@@ -278,13 +271,6 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         "    - 'DETAILS'      → drill-down / individuele transacties / specificatie\n"
         "    - 'CHAT'         → algemene uitleg of praat zonder directe cijferanalyse\n"
         "- Bepaal 'term' als het onderwerp van de vraag in gewone Nederlandse woorden.\n\n"
-        "Hints:\n"
-        "- Vragen naar transacties, bonnen, facturen of 'details' horen meestal bij 'DETAILS'.\n"
-        "- Vragen als 'hoe komt dat', 'waarom', of 'per maand daarvan' zijn vaak 'FOLLOW_UP' "
-        "op de vorige analyse.\n"
-        "- Als de vraag duidelijk de winst / omzet / kosten per periode wil weten, gebruik "
-        "'TOTAL_COST' of 'SPECIFIC_COST'.\n"
-        "- Als de vraag gaat over stijging/daling over jaren, gebruik 'TREND'.\n\n"
         "Geef ALLEEN een JSON-object terug met:\n"
         "{\n"
         '  \"relation\": \"NEW\" | \"FOLLOW_UP\",\n'
@@ -375,16 +361,7 @@ def extract_optional_topic_from_text(text: str) -> str | None:
 
 def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) -> str | None:
     """
-    Herken simpele 'waarom / hoe komt dat'-vervolgvragen.
-
-    In plaats van opnieuw via de CSV/PDF te rekenen, schakelen we dan over
-    op een EXPLAIN-ONLY modus: de AI mag alleen de eerder genoemde bedragen
-    en verhoudingen in het gesprek gebruiken, en geeft een logische uitleg
-    (bijvoorbeeld: brandstof is een deelpost van autokosten, andere autokosten
-    kunnen dalen, etc.).
-
-    We coderen dat via een speciale prefix: [FOLLOWUP_EXPLAIN]
-    zodat de chat-loop dit kan herkennen.
+    Herken simpele 'waarom / hoe komt dat'-vervolgvragen -> EXPLAIN_ONLY-modus.
     """
     if not last_analysis:
         return None
@@ -393,15 +370,12 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     if not t:
         return None
 
-    # Alleen korte, typische vervolgvragen:
     if len(t.split()) > 20:
         return None
 
-    # Als er expliciet een jaar in staat, beschouwen we het als nieuwe inhoudelijke vraag
     if re.search(r"\b20[0-9]{2}\b", t):
         return None
 
-    # Triggerwoorden voor een uitleg-vraag
     trigger_patterns = [
         r"\bwaarom\b",
         r"hoe komt dat",
@@ -413,10 +387,6 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
     if not any(re.search(p, t) for p in trigger_patterns):
         return None
 
-    # We bouwen een instructie voor de AI:
-    # - neem de direct voorafgaande antwoorden als basis
-    # - leg uit hoe de genoemde bedragen zich tot elkaar verhouden
-    # - ga niet opnieuw rekenen in CSV/PDF
     original_question = text.strip()
 
     synthetic_question = (
@@ -437,7 +407,7 @@ def detect_simple_followup(text: str, last_analysis: dict | None, data: dict) ->
 
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
     """
-    CSV-aggregatie (Optie A + D) + DETAILS-drill-down.
+    CSV-aggregatie + DETAILS-drill-down.
     """
     base_df = data.get("trans")
     syn = data.get("syn")
@@ -446,7 +416,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
     df = base_df.copy()
 
-    # Filter technische afsluitboekingen / memoriaal
     if "Description" in df.columns:
         df = df[
             ~df["Description"]
@@ -468,7 +437,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     intent_type = intent["type"]
     term = (intent["term"] or "").lower().strip()
 
-    # SPECIFIC + DETAILS gebruiken dezelfde term/synoniemen
     if intent_type in {"SPECIFIC_COST", "DETAILS"} and term:
         patterns: list[str] = [re.escape(term)]
         used_csv_synonyms = False
@@ -527,7 +495,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             f"({pct:+.1f}% ten opzichte van het jaar ervoor)."
         )
 
-    # DETAILS → drill-down toptransacties
     if intent_type == "DETAILS":
         df_sorted = df_current_range.copy()
         df_sorted["AbsAmount"] = df_sorted["AmountDC_num"].abs()
@@ -553,7 +520,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
-    # TOTAL / SPECIFIC met rekenmeester
     if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
         if years and len(years) == 1 and "Year_Clean" in df.columns:
             cur_year = years[0]
@@ -592,7 +558,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
             return "\n".join(lines), total_cur
 
-        # meerdere jaren of geen specifiek jaar
         label = "totale kosten" if intent_type == "TOTAL_COST" else (term or "geselecteerde kosten")
         lines.append(f"### {label.capitalize()} ({yrs_label})")
         lines.append(f"Totaal: € {total:,.2f}")
@@ -623,7 +588,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
-    # TREND
     if intent_type == "TREND":
         lines.append(f"### Verloop ({yrs_label}) – samenvatting uit transacties")
         if "Year_Clean" in df_current_range.columns:
@@ -653,7 +617,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
         return "\n".join(lines), total
 
-    # CHAT of overige → simpele CSV-samenvatting
     lines.append(f"### Cijfers uit transacties ({yrs_label})")
     lines.append(f"Totaal: € {total:,.2f}")
     return "\n".join(lines), total
@@ -710,9 +673,9 @@ def build_conversation_snippet(max_turns: int = 2) -> str:
 # ==========================================
 
 if check_password():
-    api_key = os.getenv("OPENAI_API_KEY") or getattr(st, "secrets", {}).get("OPENAI_API_KEY", None)
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        st.error("Geen OPENAI_API_KEY gevonden in .env of Streamlit secrets.")
+        st.error("Geen OPENAI_API_KEY gevonden in .env of omgeving.")
         st.stop()
 
     client = OpenAI(api_key=api_key)
@@ -761,8 +724,7 @@ if check_password():
 
     # INTRO
     if view == "intro":
-        st.title("Wel
-kom bij Finny")
+        st.title("Welkom bij Finny")
         st.write(
             "Ik werk met jouw demo-data (CSV + jaarrekening) en geef korte, feitelijke antwoorden. "
             "Stel een vraag over kosten, winst, omzet of trends."
@@ -847,9 +809,8 @@ kom bij Finny")
                 with st.spinner("Even rekenen..."):
                     effective_question = prompt
                     pending = st.session_state.get("pending_followup")
-                    followup_mode = "NONE"  # belangrijk voor EXPLAIN_ONLY
+                    followup_mode = "NONE"
 
-                    # 1. Expliciete ja/nee op Finny-vraag
                     if pending:
                         follow_kind = classify_followup_answer(prompt)
                         if follow_kind == "CONFIRM":
@@ -878,7 +839,6 @@ kom bij Finny")
                             st.session_state.pending_followup = None
                             effective_question = prompt
 
-                    # 2. Beperkte follow-up op basis van laatste analyse
                     if st.session_state.get("pending_followup") is None:
                         synthetic = detect_simple_followup(
                             prompt,
@@ -890,9 +850,7 @@ kom bij Finny")
                                 followup_mode = "EXPLAIN_ONLY"
                             effective_question = synthetic
 
-                    # Analyse & context
                     if followup_mode == "EXPLAIN_ONLY":
-                        # Geen nieuwe CSV/PDF-analyse; we blijven bij het gesprek zelf.
                         analysis = {
                             "intent": {"type": "CHAT", "term": ""},
                             "years": [],
@@ -1004,7 +962,6 @@ kom bij Finny")
 
                     conversation_snippet = build_conversation_snippet(max_turns=2)
 
-                    # In EXPLAIN_ONLY-modus: benadruk dat alleen gesprek gebruikt mag worden
                     if followup_mode == "EXPLAIN_ONLY":
                         context_text = (
                             "LET OP: Je mag GEEN nieuwe cijfers uit andere bronnen gebruiken. "
@@ -1095,5 +1052,3 @@ kom bij Finny")
                     st.session_state.conversations[i]["shared_with_accountant"] = bool(v)
                 st.success("Selectie bijgewerkt.")
                 st.rerun()
-
-# --- EINDE finny_app.py ---
