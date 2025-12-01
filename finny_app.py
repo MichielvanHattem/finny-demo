@@ -146,6 +146,8 @@ if "session_feedback_given" not in st.session_state:
     st.session_state.session_feedback_given = False
 if "show_conv_feedback_input" not in st.session_state:
     st.session_state.show_conv_feedback_input = False
+if "conversation_finished" not in st.session_state:
+    st.session_state.conversation_finished = False
 
 # ==========================================
 # 1. AUTH & CONVERSATIONS
@@ -185,6 +187,11 @@ def start_new_conversation() -> None:
     st.session_state.messages = []
     st.session_state["active_years"] = AVAILABLE_YEARS
     st.session_state.current_view = "chat"
+    st.session_state.session_feedback_given = False
+    st.session_state.show_conv_feedback_input = False
+    st.session_state.conversation_finished = False
+    st.session_state.escalation_consent = None
+    st.session_state.escalated_message_ids = []
 
 
 # ==========================================
@@ -1068,6 +1075,7 @@ if check_password():
         prompt = st.chat_input("Vraag Finny iets over je cijfers...")
 
         if prompt:
+            st.session_state.conversation_finished = False
             st.session_state.messages.append({"role": "user", "content": prompt})
             st.chat_message("user", avatar=user_avatar).write(prompt)
 
@@ -1253,15 +1261,6 @@ if check_password():
                         f"4. {tone}\n"
                         f"{rule5}"
                         f"{followup_instruction}"
-                        "7. Als je het antwoord niet in de beschikbare data (CSV, PDF of context) kunt vinden, "
-                        "mag je NIET gissen. Gebruik dan letterlijk één van deze zinnen:\n"
-                        "- \"Er zijn helaas onvoldoende gegevens beschikbaar om deze vraag te beantwoorden.\"\n"
-                        "- \"Finny kan hier geen antwoord op geven zonder betrouwbare bron.\"\n"
-                        "- \"Om speculatie te voorkomen geeft Finny op deze vraag geen antwoord.\"\n\n"
-                        "8. Als de vraag een menselijk oordeel vereist of duidelijk buiten de beschikbare data valt, "
-                        "kun je voorstellen om de vraag door te sturen naar de accountant met de exacte zin:\n"
-                        "\"Finny kan deze vraag niet zelfstandig beantwoorden. Wilt u dat Finny uw vraag en relevante "
-                        "gegevens doorstuurt naar uw accountant?\"\n"
                     )
 
                     msgs = [{"role": "system", "content": system_prompt}]
@@ -1296,12 +1295,15 @@ if check_password():
                     current_idx = len(st.session_state.messages) - 1
                     render_assistant_extras(reply, current_idx)
 
-        # ====== SESSIE-FEEDBACK (klein en alleen na meerdere antwoorden) ======
-        assistant_msgs = [m for m in st.session_state.messages if m.get("role") == "assistant"]
-        if len(assistant_msgs) >= 3 and not st.session_state.session_feedback_given:
-            st.markdown("---")
-            st.markdown("**Heeft dit gesprek je geholpen?**")
+        # ===== GESPREK AFRONDEN + FEEDBACK =====
+        st.markdown("---")
+        end_col, _ = st.columns([1, 3])
+        with end_col:
+            if st.button("Gesprek afronden", key="btn_end_conv"):
+                st.session_state.conversation_finished = True
 
+        if st.session_state.conversation_finished and not st.session_state.session_feedback_given:
+            st.markdown("**Heeft dit gesprek je geholpen?**")
             col1, col2 = st.columns(2)
             with col1:
                 good = st.button("👍 Ja", key="conv_fb_up")
@@ -1339,7 +1341,7 @@ if check_password():
                     st.session_state.session_feedback_given = True
                     st.session_state.show_conv_feedback_input = False
 
-        # kleine disclaimer onderin het scherm
+        # kleine rustige disclaimer onderin
         st.caption(
             "Finny kan fouten maken. Controleer belangrijke informatie altijd zelf en raadpleeg bij twijfel uw accountant."
         )
