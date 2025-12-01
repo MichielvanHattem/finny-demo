@@ -105,7 +105,7 @@ if "conversation_finished" not in st.session_state:
     st.session_state.conversation_finished = False
 
 # ==========================================
-# 1. AUTH
+# 1. AUTH & CONVERSATIONS
 # ==========================================
 
 def check_password() -> bool:
@@ -181,12 +181,11 @@ antwoord te geven in plaats van te gokken.
         )
 
     agreed = st.checkbox("Ik heb de disclaimer gelezen en ga akkoord.")
-
     start = st.button("Start Finny", disabled=not agreed, type="primary")
 
     if start:
         st.session_state.legal_accepted = True
-        st.experimental_rerun()
+        st.rerun()
 
 
 # ==========================================
@@ -291,7 +290,7 @@ def load_data():
 
 
 # ==========================================
-# 3. SANDWICH-ARCHITECTUUR & FOLLOW-UP
+# 3. ROUTER & CSV-LOGICA (Sandwich v2.1)
 # ==========================================
 
 def classify_intent(client: OpenAI, question: str) -> dict:
@@ -301,7 +300,7 @@ def classify_intent(client: OpenAI, question: str) -> dict:
     """
     q_lower = question.lower()
 
-    # 1. Detail-triggers: transacties / boekingen / specificatie
+    # DETAIL-trigger: expliciete vraag om transacties / details
     detail_triggers = [
         "transactie", "transacties", "boeking", "boekingen",
         "mutatie", "mutaties", "bonnetje", "bonnetjes",
@@ -316,13 +315,13 @@ def classify_intent(client: OpenAI, question: str) -> dict:
         if last_type in {"SPECIFIC_COST", "TOTAL_COST", "TREND"} and last_term:
             return {"type": "DETAILS", "term": last_term}
 
-    # 2. Normale LLM-router
+    # Normale LLM-router
     system = (
         "Je bent een router voor de Finny demo.\n"
         "Analyseer de vraag van een ondernemer en geef ALLEEN JSON terug met:\n"
         "{\n"
-        '  "type": "TOTAL_COST" | "SPECIFIC_COST" | "TREND" | "CHAT",\n'
-        '  "term": "<onderwerp in gewone woorden>"\n'
+        '  \"type\": \"TOTAL_COST\" | \"SPECIFIC_COST\" | \"TREND\" | \"CHAT\",\n'
+        '  \"term\": \"<onderwerp in gewone woorden>\"\n'
         "}\n"
     )
 
@@ -446,7 +445,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     yrs_label = ", ".join(str(y) for y in years) if years else "alle jaren"
     lines: list[str] = []
 
-    # --- DETAILS-modus → toptransacties ---
+    # DETAILS → toptransacties
     if intent_type == "DETAILS":
         df_sorted = df_current_range.copy()
         df_sorted["AbsAmount"] = df_sorted["AmountDC_num"].abs()
@@ -455,7 +454,6 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
         lines.append(
             f"### Top transacties voor '{term or 'geselecteerde kosten'}' ({yrs_label})"
         )
-
         for _, row in top_trans.iterrows():
             desc = str(row.get("Description", "") or "").strip() or "Onbekend"
             acc = str(row.get("AccountName", "") or "").strip()
@@ -485,6 +483,7 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
             f"({pct:+.1f}% ten opzichte van het jaar ervoor)."
         )
 
+    # TOTAL/SPECIFIC
     if intent_type in {"TOTAL_COST", "SPECIFIC_COST"}:
         if years and len(years) == 1 and "Year_Clean" in df.columns:
             cur_year = years[0]
@@ -613,7 +612,7 @@ if check_password():
 
         if st.button("Nieuw gesprek", use_container_width=True):
             start_new_conversation()
-            st.experimental_rerun()
+            st.rerun()
 
         if st.button("Gesprek afronden", use_container_width=True):
             st.session_state.conversation_finished = True
@@ -635,7 +634,7 @@ if check_password():
         )
         if choice != st.session_state.current_view:
             st.session_state.current_view = choice
-            st.experimental_rerun()
+            st.rerun()
 
     view = st.session_state.current_view
 
@@ -696,7 +695,7 @@ if check_password():
 
             st.session_state.client_profile = prof
             st.session_state.current_view = "chat"
-            st.experimental_rerun()
+            st.rerun()
 
     # CHAT
     elif view == "chat":
@@ -726,12 +725,7 @@ if check_password():
                 with st.spinner("Even nadenken..."):
                     effective_question = prompt
 
-                    # (optionele simpele follow-up; v2.1 hield dit beperkt)
-                    synthetic = detect_simple_followup(
-                        prompt,
-                        st.session_state.get("last_analysis"),
-                        data,
-                    )
+                    synthetic = None  # eenvoudige follow-up desgewenst
                     if synthetic:
                         effective_question = synthetic
 
@@ -836,9 +830,7 @@ if check_password():
                         )
                         reply = resp.choices[0].message.content
                     except Exception as e:
-                        reply = (
-                            f"Er ging iets mis bij het ophalen van het antwoord van het model: {e}"
-                        )
+                        reply = f"Er ging iets mis bij het ophalen van het antwoord van het model: {e}"
 
                     st.write(reply)
                     st.session_state.messages.append(
@@ -927,7 +919,7 @@ if check_password():
                         v
                     )
                 st.success("Selectie bijgewerkt.")
-                st.experimental_rerun()
+                st.rerun()
 
     # VASTE FOOTER ONDERIN
     footer_html = """
