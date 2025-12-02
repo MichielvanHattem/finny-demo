@@ -1,0 +1,394 @@
+﻿Finny_GLCode;Finny_GLDescription;BalanceTypeCode;BalanceTypeDescription;cgClassificationNewStyle6_GLSchemeCode;GLClassificationCode_RGS versie 3.5;GLClassificationDescr_RGS versie 3.5Description;TypeCode;TypeDescriptionDescription;BalanceSideDescription;BalanceSideCode;InterpretationHint;SemanticDescription
+100;Goodwill;B;Balans;RGS versie 3.5;BIvaGooVvp;Verkrijgings- of vervaardigingsprijs goodwill;30;Vaste activa;Debet;D;BALANS;goodwill | tags: balans
+111;Cumulatieve afschrijving goodwill;B;Balans;RGS versie 3.5;BIvaGooCae;Cumulatieve afschrijvingen en waardeverminderingen goodwill;35;Cumulatieve afschrijvingen;Debet;D;BOTH;"cumulatieve afschrijving goodwill | tags: afschrijving; balans_en_w&v"
+200;Gebouwen;B;Balans;RGS versie 3.5;BMvaBegVvp;Verkrijgings- of vervaardigingsprijs bedrijfsgebouwen;30;Vaste activa;Debet;D;BALANS;"gebouwen | tags: balans; gebouw; huisvesting; pand"
+205;Grond;B;Balans;RGS versie 3.5;BMvaTerVvp;Verkrijgings- of vervaardigingsprijs terreinen;30;Vaste activa;Debet;D;BALANS;grond | tags: balans
+211;Cumulatieve afschrijvingen gebouwen;B;Balans;RGS versie 3.5;BMvaBegCae;Cumulatieve afschrijvingen en waardeverminderingen bedrijfsgebouwen;35;Cumulatieve afschrijvingen;Credit;C;BOTH;"cumulatieve afschrijvingen gebouwen | tags: afschrijving; balans_en_w&v; gebouw; huisvesting; pand"
+240;Machines en installaties;B;Balans;RGS versie 3.5;BMvaMeiVvp;Verkrijgings- of vervaardigingsprijs machines en installaties;30;Vaste activa;Debet;D;BALANS;machines en installaties | tags: balans
+241;Cumulatieve afschrijvingen machines en installaties;B;Balans;RGS versie 3.5;BMvaMeiCae;Cumulatieve afschrijvingen en waardeverminderingen machines en installaties;35;Cumulatieve afschrijvingen;Credit;C;BOTH;"cumulatieve afschrijvingen machines en installaties | tags: afschrijving; balans_en_w&v"
+250;Bedrijfsinventaris;B;Balans;RGS versie 3.5;BMvaBeiVvp;Verkrijgings- of vervaardigingsprijs inventaris;30;Vaste activa;Debet;D;BALANS;bedrijfsinventaris | tags: balans
+251;Cumulatieve afschrijvingen bedrijfsinventaris;B;Balans;RGS versie 3.5;BMvaBeiCae;Cumulatieve afschrijvingen en waardeverminderingen inventaris;35;Cumulatieve afschrijvingen;Credit;C;BOTH;"cumulatieve afschrijvingen bedrijfsinventaris | tags: afschrijving; balans_en_w&v"
+255;Bedrijfsinventaris 2;B;Balans;RGS versie 3.5;BMvaBeiVvp;Verkrijgings- of vervaardigingsprijs inventaris;30;Vaste activa;Debet;D;BALANS;bedrijfsinventaris 2 | tags: balans
+256;Cumulatieve afschrijvingen bedrijfsinventaris 2;B;Balans;RGS versie 3.5;BMvaBeiCae;Cumulatieve afschrijvingen en waardeverminderingen inventaris;35;Cumulatieve afschrijvingen;Credit;C;BOTH;"cumulatieve afschrijvingen bedrijfsinventaris 2 | tags: afschrijving; balans_en_w&v"
+260;Vervoermiddelen;B;Balans;RGS versie 3.5;BMvaTevVvp;Verkrijgings- of vervaardigingsprijs automobielen en overige transportmiddelen;30;Vaste activa;Debet;D;BALANS;"vervoermiddelen | tags: auto; balans; vervoermiddel"
+261;Cumulatieve afschrijvingen vervoermiddelen;B;Balans;RGS versie 3.5;BMvaTevCae;Cumulatieve afschrijvingen en waardeverminderingen automobielen en overige transportmiddelen;35;Cumulatieve afschrijvingen;Credit;C;BOTH;"cumulatieve afschrijvingen vervoermiddelen | tags: afschrijving; auto; balans_en_w&v; vervoermiddel"
+290;Herwaardering activa;B;Balans;RGS versie 3.5;BMvaBegCuh;Cumulatieve herwaarderingen bedrijfsgebouwen;32;Overige activa;Debet;D;BALANS;herwaardering activa | tags: balans
+300;Waarborgsommen;B;Balans;RGS versie 3.5;BVorOvrWbs;Waarborgsommen overige vorderingen;32;Overige activa;Credit;C;BALANS;waarborgsommen | tags: balans
+500;Deelneming 1;B;Balans;RGS versie 3.5;BFvaDigNev;Verkrijgingsprijs deelnemingen in groepsmaatschappijen;32;Overige activa;Debet;D;BALANS;deelneming 1 | tags: balans
+510;Deelneming 2;B;Balans;RGS versie 3.5;BFvaDigNev;Verkrijgingsprijs deelnemingen in groepsmaatschappijen;32;Overige activa;Debet;D;BALANS;deelneming 2 | tags: balans
+520;Deelneming 3;B;Balans;RGS versie 3.5;BFvaDigNev;Verkrijgingsprijs deelnemingen in groepsmaatschappijen;32;Overige activa;Debet;D;BALANS;deelneming 3 | tags: balans
+530;Deelneming 4;B;Balans;RGS versie 3.5;BFvaDigNev;Verkrijgingsprijs deelnemingen in groepsmaatschappijen;32;Overige activa;Debet;D;BALANS;deelneming 4 | tags: balans
+540;Deelneming 5;B;Balans;RGS versie 3.5;BFvaDigNev;Verkrijgingsprijs deelnemingen in groepsmaatschappijen;32;Overige activa;Debet;D;BALANS;deelneming 5 | tags: balans
+550;Actieve belastinglatentie;B;Balans;RGS versie 3.5;BFvaLbvBll;Compensabele verliezen;32;Overige activa;Debet;D;BALANS;actieve belastinglatentie | tags: balans
+560;Lening u/g M. van Hattem;B;Balans;RGS versie 3.5;BFvaOvrOvl;Hoofdsom overige financiële vaste activa (langlopend);32;Overige activa;Debet;D;BOTH;"lening u/g m. van hattem | tags: balans_en_w&v; lening"
+561;Lening u/g 2;B;Balans;RGS versie 3.5;BFvaOvrOvl;Hoofdsom overige financiële vaste activa (langlopend);32;Overige activa;Debet;D;BOTH;"lening u/g 2 | tags: balans_en_w&v; lening"
+562;Lening u/g 3;B;Balans;RGS versie 3.5;BFvaOvrOvl;Hoofdsom overige financiële vaste activa (langlopend);32;Overige activa;Debet;D;BOTH;"lening u/g 3 | tags: balans_en_w&v; lening"
+563;Lening u/g 4;B;Balans;RGS versie 3.5;BFvaOvrOvl;Hoofdsom overige financiële vaste activa (langlopend);32;Overige activa;Debet;D;BOTH;"lening u/g 4 | tags: balans_en_w&v; lening"
+564;Lening u/g 5;B;Balans;RGS versie 3.5;BFvaOvrOvl;Hoofdsom overige financiële vaste activa (langlopend);32;Overige activa;Debet;D;BOTH;"lening u/g 5 | tags: balans_en_w&v; lening"
+600;Effecten;B;Balans;RGS versie 3.5;BEffOveOeb;Overige effecten beursgenoteerde effecten;32;Overige activa;Debet;D;BALANS;effecten | tags: balans
+700;Aandelenkapitaal;B;Balans;RGS versie 3.5;BEivGokGea;Normale aandelen aandelenkapitaal;50;Eigen vermogen;Credit;C;BALANS;aandelenkapitaal | tags: balans
+710;Agioreserve;B;Balans;RGS versie 3.5;BEivAgiAgi;Agioreserve agio;50;Eigen vermogen;Credit;C;BALANS;agioreserve | tags: balans
+720;Herwaarderingsreserve;B;Balans;RGS versie 3.5;BEivHerHew;Herwaardering herwaarderingsreserves;50;Eigen vermogen;Credit;C;BALANS;herwaarderingsreserve | tags: balans
+721;Wettelijke reserve;B;Balans;RGS versie 3.5;BEivWerRed;Wettelijke reserve deelnemingen;50;Eigen vermogen;Credit;C;BALANS;wettelijke reserve | tags: balans
+750;Overige reserve;B;Balans;RGS versie 3.5;BEivOreOvw;Niet verdeelde winst onverdeelde winst;50;Eigen vermogen;Credit;C;BALANS;overige reserve | tags: balans
+751;Onverdeeld resultaat;B;Balans;RGS versie 3.5;BEivOreOvw;Niet verdeelde winst onverdeelde winst;52;Nog te verdelen resultaat;Credit;C;BALANS;onverdeeld resultaat | tags: balans
+760;Kapitaal M. van Hattem;B;Balans;RGS versie 3.5;BEivKapOnd;Ondernemingsvermogen exclusief fiscale reserves fiscaal eigen vermogen onderneming natuurlijke personen;50;Eigen vermogen;Credit;C;BALANS;kapitaal m. van hattem | tags: balans
+765;Kapitaalmutaties vennoot 1;B;Balans;RGS versie 3.5;BEivKapOnd;Ondernemingsvermogen exclusief fiscale reserves fiscaal eigen vermogen onderneming natuurlijke personen;50;Eigen vermogen;Credit;C;BOTH;kapitaalmutaties vennoot 1 | tags: balans_en_w&v
+770;Kapitaal vennoot 2;B;Balans;RGS versie 3.5;BEivGokGea;Normale aandelen aandelenkapitaal;50;Eigen vermogen;Credit;C;BALANS;kapitaal vennoot 2 | tags: balans
+775;Kapitaalmutaties vennoot 2;B;Balans;RGS versie 3.5;BEivKapOnd;Ondernemingsvermogen exclusief fiscale reserves fiscaal eigen vermogen onderneming natuurlijke personen;50;Eigen vermogen;Credit;C;BOTH;kapitaalmutaties vennoot 2 | tags: balans_en_w&v
+780;Kapitaal vennoot 3;B;Balans;RGS versie 3.5;BEivGokGea;Normale aandelen aandelenkapitaal;50;Eigen vermogen;Credit;C;BALANS;kapitaal vennoot 3 | tags: balans
+785;Kapitaalmutaties vennoot 3;B;Balans;RGS versie 3.5;BEivKapOnd;Ondernemingsvermogen exclusief fiscale reserves fiscaal eigen vermogen onderneming natuurlijke personen;50;Eigen vermogen;Credit;C;BOTH;kapitaalmutaties vennoot 3 | tags: balans_en_w&v
+800;Pensioenvoorziening;B;Balans;RGS versie 3.5;BVrzVvpVpd;Voorziening voor pensioenen directie in eigen beheer voorziening voor pensioenen;27;Voorzieningen;Credit;C;BOTH;pensioenvoorziening | tags: balans_en_w&v
+801;Garantievoorziening;B;Balans;RGS versie 3.5;BVrzOvzGar;Garantievoorziening;27;Voorzieningen;Credit;C;BOTH;garantievoorziening | tags: balans_en_w&v
+802;Voorziening groot onderhoud;B;Balans;RGS versie 3.5;BVrzOvzVvg;Voorziening voor groot onderhoud;27;Voorzieningen;Credit;C;BOTH;voorziening groot onderhoud | tags: balans_en_w&v
+803;Voorziening belastinglatentie;B;Balans;RGS versie 3.5;BVrzVvbVlb;Voorziening voor latente belastingverplichtingen voorziening voor belastingen;27;Voorzieningen;Credit;C;BOTH;voorziening belastinglatentie | tags: balans_en_w&v
+850;Voorziening deelneming 1;B;Balans;RGS versie 3.5;BVrzOvzVid;Voorziening in verband met deelnemingen;27;Voorzieningen;Credit;C;BOTH;voorziening deelneming 1 | tags: balans_en_w&v
+860;Voorziening deelneming 2;B;Balans;RGS versie 3.5;BVrzOvzVid;Voorziening in verband met deelnemingen;27;Voorzieningen;Credit;C;BOTH;voorziening deelneming 2 | tags: balans_en_w&v
+870;Voorziening deelneming 3;B;Balans;RGS versie 3.5;BVrzOvzVid;Voorziening in verband met deelnemingen;27;Voorzieningen;Credit;C;BOTH;voorziening deelneming 3 | tags: balans_en_w&v
+880;Voorziening deelneming 4;B;Balans;RGS versie 3.5;BVrzOvzVid;Voorziening in verband met deelnemingen;27;Voorzieningen;Credit;C;BOTH;voorziening deelneming 4 | tags: balans_en_w&v
+890;Voorziening deelneming 5;B;Balans;RGS versie 3.5;BVrzOvzVid;Voorziening in verband met deelnemingen;27;Voorzieningen;Credit;C;BOTH;voorziening deelneming 5 | tags: balans_en_w&v
+900;Accumulated repayment loan M. van Hattem;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BALANS;accumulated repayment loan m. van hattem | tags: balans
+901;Cumulatieve aflossingen hypothecaire lening 1;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen hypothecaire lening 1 | tags: balans_en_w&v; lening"
+902;Hypothecaire lening 2;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"hypothecaire lening 2 | tags: balans_en_w&v; lening"
+903;Cumulatieve aflossingen hypothecaire lening 2;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen hypothecaire lening 2 | tags: balans_en_w&v; lening"
+904;Hypothecaire lening 3;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"hypothecaire lening 3 | tags: balans_en_w&v; lening"
+905;Cumulatieve aflossingen hypothecaire lening 3;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen hypothecaire lening 3 | tags: balans_en_w&v; lening"
+906;Hypothecaire lening 4;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"hypothecaire lening 4 | tags: balans_en_w&v; lening"
+907;Cumulatieve aflossingen hypothecaire lening 4;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen hypothecaire lening 4 | tags: balans_en_w&v; lening"
+908;Hypothecaire lening 5;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"hypothecaire lening 5 | tags: balans_en_w&v; lening"
+909;Cumulatieve aflossingen hypothecaire lening 5;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen hypothecaire lening 5 | tags: balans_en_w&v; lening"
+920;Lening o/g Apple iPhone 17 Pro Max - Vodafone;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"lening o/g apple iphone 17 pro max - vodafone | tags: balans_en_w&v; lening"
+921;Accumulated repayment loan o/g Apple iPhone 17 Pro Max;B;Balans;RGS versie 3.5;BLasAclAll;Hoofdsom achtergestelde schulden (langlopend);55;Langlopende schulden;Debet;D;BALANS;accumulated repayment loan o/g apple iphone 17 pro max | tags: balans
+922;Lening o/g 2;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"lening o/g 2 | tags: balans_en_w&v; lening"
+923;Cumulatieve aflossingen lening o/g 2;B;Balans;RGS versie 3.5;BLasAclAll;Hoofdsom achtergestelde schulden (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen lening o/g 2 | tags: balans_en_w&v; lening"
+924;Lening o/g 3;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"lening o/g 3 | tags: balans_en_w&v; lening"
+925;Cumulatieve aflossingen lening o/g 3;B;Balans;RGS versie 3.5;BLasAclAll;Hoofdsom achtergestelde schulden (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen lening o/g 3 | tags: balans_en_w&v; lening"
+926;Lening o/g 4;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"lening o/g 4 | tags: balans_en_w&v; lening"
+927;Cumulatieve aflossingen lening o/g 4;B;Balans;RGS versie 3.5;BLasAclAll;Hoofdsom achtergestelde schulden (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen lening o/g 4 | tags: balans_en_w&v; lening"
+928;Lening o/g 5;B;Balans;RGS versie 3.5;BLasSakLvl;Hoofdsom leningen van kredietinstellingen (langlopend);55;Langlopende schulden;Credit;C;BOTH;"lening o/g 5 | tags: balans_en_w&v; lening"
+929;Cumulatieve aflossingen lening o/g 5;B;Balans;RGS versie 3.5;BLasAclAll;Hoofdsom achtergestelde schulden (langlopend);55;Langlopende schulden;Debet;D;BOTH;"cumulatieve aflossingen lening o/g 5 | tags: balans_en_w&v; lening"
+940;Reserve Uitgesteld Salaris;B;Balans;RGS versie 3.5;BLasOlsOsl;Hoofdsom overige schulden (langlopend);55;Langlopende schulden;Credit;C;BALANS;"reserve uitgesteld salaris | tags: balans; loon; personeel"
+960;Financial Lease Volvo H-384-FP;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Credit;C;BALANS;financial lease volvo h-384-fp | tags: balans
+961;Aflossingen lease 1;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Debet;D;BALANS;aflossingen lease 1 | tags: balans
+962;Lease Range Rover HND05F;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Credit;C;BALANS;lease range rover hnd05f | tags: balans
+963;Aflossingen lease Range Rover HND05F;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Debet;D;BALANS;aflossingen lease range rover hnd05f | tags: balans
+964;Lease 3;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Credit;C;BALANS;lease 3 | tags: balans
+965;Aflossingen lease  3;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Debet;D;BALANS;aflossingen lease  3 | tags: balans
+966;Lease 4;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Credit;C;BALANS;lease 4 | tags: balans
+967;Aflossingen lease 4;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Debet;D;BALANS;aflossingen lease 4 | tags: balans
+968;Lease 5;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Credit;C;BALANS;lease 5 | tags: balans
+969;Aflossingen lease 5;B;Balans;RGS versie 3.5;BLasFlvFlv;Hoofdsom financiële lease verplichtingen (langlopend);55;Langlopende schulden;Debet;D;BALANS;aflossingen lease 5 | tags: balans
+980;Geactiveerde rente lease;B;Balans;RGS versie 3.5;BVorOvrTvo;Te vorderen overige rente;32;Overige activa;Debet;D;BALANS;"geactiveerde rente lease | tags: balans; rente"
+1000;Kas 1;B;Balans;RGS versie 3.5;BLimKasKas;Kas kasmiddelen;10;Kas;Debet;D;BALANS;kas 1 | tags: balans
+1010;Kas 2;B;Balans;RGS versie 3.5;BLimKasKas;Kas kasmiddelen;10;Kas;Debet;D;BALANS;kas 2 | tags: balans
+1100;Bank 1;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 1 | tags: balans; bank"
+1101;Rabobank Zakelijke rekening NL93 RABO 0144 3457 30;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"rabobank zakelijke rekening nl93 rabo 0144 3457 30 | tags: balans; bank"
+1102;NL07 RABO 1340 1614 35;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;nl07 rabo 1340 1614 35 | tags: balans
+1103;Rabobank BedrijfsSpaarRekening NL57 RABO 3469 6067 73;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"rabobank bedrijfsspaarrekening nl57 rabo 3469 6067 73 | tags: balans; bank"
+1110;Bank 2;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 2 | tags: balans; bank"
+1120;Bank 3;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 3 | tags: balans; bank"
+1130;Bank 4;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 4 | tags: balans; bank"
+1140;Bank 5;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 5 | tags: balans; bank"
+1150;Bank 6;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 6 | tags: balans; bank"
+1160;Bank 7;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 7 | tags: balans; bank"
+1170;Bank 8;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 8 | tags: balans; bank"
+1180;Bank 9;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 9 | tags: balans; bank"
+1190;Bank 10;B;Balans;RGS versie 3.5;BLimBanRba;Rekening-courant bank tegoeden op bankgirorekeningen;12;Bank;Debet;D;BALANS;"bank 10 | tags: balans; bank"
+1300;Debiteuren;B;Balans;RGS versie 3.5;BVorDebHad;Handelsdebiteuren nominaal;20;Debiteuren;Debet;D;BALANS;"debiteuren | tags: balans; debiteuren"
+1310;Debiteuren zonder sub;B;Balans;RGS versie 3.5;BVorDebHad;Handelsdebiteuren nominaal;26;Vooruitbetalingen;Debet;D;BALANS;"debiteuren zonder sub | tags: balans; debiteuren"
+1320;Voorziening dubieuze debiteuren;B;Balans;RGS versie 3.5;BVorDebVdd;Voorziening voor oninbaarheid op vorderingen op handelsdebiteuren;26;Vooruitbetalingen;Credit;C;BOTH;"voorziening dubieuze debiteuren | tags: balans_en_w&v; debiteuren"
+1400;Rekening-courant groepsmaatschappijen 1;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 1 | tags: balans
+1405;Rekening-courant groepsmaatschappijen 2;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 2 | tags: balans
+1410;Rekening-courant groepsmaatschappijen 3;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 3 | tags: balans
+1415;Rekening-courant groepsmaatschappijen 4;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 4 | tags: balans
+1420;Rekening-courant groepsmaatschappijen 5;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 5 | tags: balans
+1425;Rekening-courant groepsmaatschappijen 6;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 6 | tags: balans
+1430;Rekening-courant groepsmaatschappijen 7;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 7 | tags: balans
+1435;Rekening-courant groepsmaatschappijen 8;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 8 | tags: balans
+1440;Rekening-courant groepsmaatschappijen 9;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 9 | tags: balans
+1445;Rekening-courant groepsmaatschappijen 10;B;Balans;RGS versie 3.5;BSchSagSg1Klg;Kortlopend deel van langlopende schulden aan groepsmaatschappijen schulden aan groepsmaatschappijen;60;Overige schulden;Debet;D;BALANS;rekening-courant groepsmaatschappijen 10 | tags: balans
+1450;Rekening-courant participanten;B;Balans;RGS versie 3.5;BVorOvrRcb;Rekening-courant bestuurders overige vorderingen (kortlopend);60;Overige schulden;Debet;D;BALANS;rekening-courant participanten | tags: balans
+1460;Rekening-courant M.C.G. van Hattem;B;Balans;RGS versie 3.5;BVorOvrRcb;Rekening-courant bestuurders overige vorderingen (kortlopend);60;Overige schulden;Debet;D;BALANS;rekening-courant m.c.g. van hattem | tags: balans
+1461;Rekening-courant directie 2;B;Balans;RGS versie 3.5;BVorOvrRcb;Rekening-courant bestuurders overige vorderingen (kortlopend);60;Overige schulden;Debet;D;BALANS;rekening-courant directie 2 | tags: balans
+1490;Vraagposten;B;Balans;RGS versie 3.5;BSchOpaOop;Overige overlopende passiva overlopende passiva;60;Overige schulden;Debet;D;BALANS;vraagposten | tags: balans
+1500;Af te dragen BTW hoog;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"af te dragen btw hoog | tags: balans_en_w&v; btw"
+1510;Af te dragen BTW laag;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"af te dragen btw laag | tags: balans_en_w&v; btw"
+1520;Af te dragen BTW verwerving goederen buiten EU;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"af te dragen btw verwerving goederen buiten eu | tags: balans_en_w&v; btw"
+1530;Af te dragen BTW verwerving goederen binnen EU;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"af te dragen btw verwerving goederen binnen eu | tags: balans_en_w&v; btw"
+1540;BTW prive-gebruik;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"btw prive-gebruik | tags: balans_en_w&v; btw"
+1550;Te vorderen BTW;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"te vorderen btw | tags: balans_en_w&v; btw"
+1555;BTW Kleine Ondernemersregeling;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"btw kleine ondernemersregeling | tags: balans_en_w&v; btw"
+1560;BTW verlegd;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"btw verlegd | tags: balans_en_w&v; btw"
+1570;BTW overige tarieven;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;24;Btw;Credit;C;BOTH;"btw overige tarieven | tags: balans_en_w&v; btw"
+1590;BTW balanspost;B;Balans;RGS versie 3.5;BSchBepBtw;Te betalen Omzetbelasting;60;Overige schulden;Credit;C;BOTH;"btw balanspost | tags: balans_en_w&v; btw"
+1600;Crediteuren;B;Balans;RGS versie 3.5;BSchCreHac;Handelscrediteuren nominaal schulden aan leveranciers en handelskredieten;22;Crediteuren;Credit;C;BALANS;"crediteuren | tags: balans; crediteuren"
+1610;Crediteuren zonder sub;B;Balans;RGS versie 3.5;BSchCreHac;Handelscrediteuren nominaal schulden aan leveranciers en handelskredieten;60;Overige schulden;Credit;C;BALANS;"crediteuren zonder sub | tags: balans; crediteuren"
+1700;Loonheffingen;B;Balans;RGS versie 3.5;BSchBepLhe;Te betalen Loonheffing belastingen en premies sociale verzekeringen;60;Overige schulden;Credit;C;BALANS;"loonheffingen | tags: balans; loon; personeel"
+1710;Sociale lasten;B;Balans;RGS versie 3.5;BSchSalPsv;Premies sociale verzekeringen overige schulden;60;Overige schulden;Credit;C;BALANS;sociale lasten | tags: balans
+1720;Pensioenpremies;B;Balans;RGS versie 3.5;BSchSalPsv;Premies sociale verzekeringen overige schulden;60;Overige schulden;Credit;C;BALANS;pensioenpremies | tags: balans
+1725;Vakantiefondsafdracht;B;Balans;RGS versie 3.5;BSchSalPsv;Premies sociale verzekeringen overige schulden;60;Overige schulden;Credit;C;BALANS;vakantiefondsafdracht | tags: balans
+1730;Reservering vakantiegeld;B;Balans;RGS versie 3.5;BSchSalTvg;Te betalen vakantiegeld overige schulden;60;Overige schulden;Credit;C;BOTH;reservering vakantiegeld | tags: balans_en_w&v
+1731;Reservering 2;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Credit;C;BOTH;reservering 2 | tags: balans_en_w&v
+1732;Reservering 3;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Credit;C;BOTH;reservering 3 | tags: balans_en_w&v
+1733;Reservering 4;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Credit;C;BOTH;reservering 4 | tags: balans_en_w&v
+1740;Reservering vakantiedagen;B;Balans;RGS versie 3.5;BSchSalTbv;Reservering vakantiedagen overige schulden;60;Overige schulden;Credit;C;BOTH;reservering vakantiedagen | tags: balans_en_w&v
+1800;Vennootschapsbelasting;B;Balans;RGS versie 3.5;BSchBepVpb;Te betalen Vennootschapsbelasting;60;Overige schulden;Credit;C;BALANS;vennootschapsbelasting | tags: balans
+1810;Dividendbelasting;B;Balans;RGS versie 3.5;BSchBepVpb;Te betalen Vennootschapsbelasting;60;Overige schulden;Credit;C;BALANS;dividendbelasting | tags: balans
+1900;Nog te ontvangen bedragen;B;Balans;RGS versie 3.5;BVorOvrOvk;Overige vorderingen overige vorderingen;60;Overige schulden;Debet;D;BALANS;nog te ontvangen bedragen | tags: balans
+1910;Vooruitbetaalde bedragen;B;Balans;RGS versie 3.5;BVorOvaVof;Vooruitbetaalde facturen overlopende activa;26;Vooruitbetalingen;Debet;D;BOTH;vooruitbetaalde bedragen | tags: balans_en_w&v
+1920;Nog te betalen bedragen;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Credit;C;BALANS;nog te betalen bedragen | tags: balans
+1930;Vooruitontvangen bedragen;B;Balans;RGS versie 3.5;BSchOpaVor;Vooruitontvangen rente overlopende passiva;60;Overige schulden;Credit;C;BOTH;vooruitontvangen bedragen | tags: balans_en_w&v
+1940;Amounts to be invoiced;B;Balans;RGS versie 3.5;BVorOvaNtf;Nog te factureren of nog te verzenden facturen overlopende activa;26;Vooruitbetalingen;Debet;D;BALANS;amounts to be invoiced | tags: balans
+1950;Vooruitgefactureerde omzet;B;Balans;RGS versie 3.5;BSchOpaOop;Overige overlopende passiva overlopende passiva;60;Overige schulden;Credit;C;BALANS;vooruitgefactureerde omzet | tags: balans
+2000;Nettolonen;B;Balans;RGS versie 3.5;BSchSalNet;Netto lonen overige schulden;60;Overige schulden;Credit;C;BALANS;nettolonen | tags: balans
+2010;Inhouding Hiaat verzekeringen;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Credit;C;BALANS;"inhouding hiaat verzekeringen | tags: balans; verzekering"
+2200;Kruisposten;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten | tags: balans
+2210;Kruisposten pin;B;Balans;RGS versie 3.5;BLimKruPib;PIN betalingen kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten pin | tags: balans
+2220;Kruisposten creditcard;B;Balans;RGS versie 3.5;BLimKruCra;Creditcard afrekening kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten creditcard | tags: balans
+2230;Kruisposten 1;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten 1 | tags: balans
+2240;Kruisposten 2;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten 2 | tags: balans
+2250;Kruisposten 3;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten 3 | tags: balans
+2260;Kruisposten 4;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten 4 | tags: balans
+2270;Kruisposten 5;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;60;Overige schulden;Debet;D;BALANS;kruisposten 5 | tags: balans
+2290;Tussenrekening bank;B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;90;Algemeen;Credit;C;BALANS;"tussenrekening bank | tags: balans; bank"
+2291;Tussenrekening incasso's;B;Balans;RGS versie 3.5;BVorDebHad;Handelsdebiteuren nominaal;90;Algemeen;Credit;C;BALANS;tussenrekening incasso's | tags: balans
+2300;Personeelskosten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;"personeelskosten | tags: balans; loon; personeel"
+2400;Huisvestingskosten;B;Balans;RGS versie 3.5;BVorOvaOoa;Overige overlopende activa overlopende activa;60;Overige schulden;Debet;D;BALANS;"huisvestingskosten | tags: balans; gebouw; huisvesting; pand"
+2500;Exploitatiekosten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;exploitatiekosten | tags: balans
+2600;Autokosten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;"autokosten | tags: auto; balans; vervoermiddel"
+2700;Verkoopkosten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;verkoopkosten | tags: balans
+2800;Kantoorkosten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;kantoorkosten | tags: balans
+2900;Algemene kosten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;algemene kosten | tags: balans
+2990;Financiële baten en lasten;B;Balans;RGS versie 3.5;BSchOpaNtb;Nog te betalen andere kosten overlopende passiva;60;Overige schulden;Debet;D;BALANS;financiële baten en lasten | tags: balans
+3000;Voorraad gereed product 1;B;Balans;RGS versie 3.5;BVrdGepVoo;Gereed product, bruto gereed product;40;Voorraad;Debet;D;BALANS;"voorraad gereed product 1 | tags: balans; voorraad"
+3010;Voorraad gereed product 2;B;Balans;RGS versie 3.5;BVrdGepVoo;Gereed product, bruto gereed product;40;Voorraad;Debet;D;BALANS;"voorraad gereed product 2 | tags: balans; voorraad"
+3020;Voorraad gereed product 3;B;Balans;RGS versie 3.5;BVrdGepVoo;Gereed product, bruto gereed product;40;Voorraad;Debet;D;BALANS;"voorraad gereed product 3 | tags: balans; voorraad"
+3030;Voorraad gereed product 4;B;Balans;RGS versie 3.5;BVrdGepVoo;Gereed product, bruto gereed product;40;Voorraad;Debet;D;BALANS;"voorraad gereed product 4 | tags: balans; voorraad"
+3040;Voorraad gereed product 5;B;Balans;RGS versie 3.5;BVrdGepVoo;Gereed product, bruto gereed product;40;Voorraad;Debet;D;BALANS;"voorraad gereed product 5 | tags: balans; voorraad"
+3100;Voorraad handelsgoederen;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen | tags: balans; voorraad"
+3110;Voorraad handelsgoederen 2;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 2 | tags: balans; voorraad"
+3120;Voorraad handelsgoederen 3;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 3 | tags: balans; voorraad"
+3130;Voorraad handelsgoederen 4;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 4 | tags: balans; voorraad"
+3140;Voorraad handelsgoederen 5;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 5 | tags: balans; voorraad"
+3150;Voorraad handelsgoederen 6;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 6 | tags: balans; voorraad"
+3160;Voorraad handelsgoederen 7;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 7 | tags: balans; voorraad"
+3170;Voorraad handelsgoederen 8;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 8 | tags: balans; voorraad"
+3180;Voorraad handelsgoederen 9;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 9 | tags: balans; voorraad"
+3190;Voorraad handelsgoederen 10;B;Balans;RGS versie 3.5;BVrdHanVoo;Handelsgoederen, bruto handelsgoederen;40;Voorraad;Debet;D;BALANS;"voorraad handelsgoederen 10 | tags: balans; voorraad"
+3200;Incourante voorraad gereed product;B;Balans;RGS versie 3.5;BVrdGepVoo;Gereed product, bruto gereed product;40;Voorraad;Debet;D;BALANS;"incourante voorraad gereed product | tags: balans; voorraad"
+3210;Incourante voorraad handelsgoederen;B;Balans;RGS versie 3.5;BVrdHanVic;Handelsgoederen, voorziening incourante handelsgoederen handelsgoederen;40;Voorraad;Debet;D;BALANS;"incourante voorraad handelsgoederen | tags: balans; voorraad"
+3300;Onderhanden werk;B;Balans;RGS versie 3.5;BVrdOweVoo;Onderhanden werk, bruto onderhanden werk;40;Voorraad;Debet;D;BALANS;onderhanden werk | tags: balans
+3400;Emballage;B;Balans;RGS versie 3.5;BVrdEmbVoo;Voorraad emballage, bruto emballage;40;Voorraad;Debet;D;BALANS;emballage | tags: balans
+4000;Bruto loon;W;Winst & Verlies;RGS versie 3.5;WPerLesLon;Lonen en salarissen;120;Overige kosten;Debet;D;W&V;"bruto loon | tags: loon; personeel; w&v"
+4001;Overwerktoeslag;W;Winst & Verlies;RGS versie 3.5;WPerLesVag;Vakantiebijslag lonen en salarissen;120;Overige kosten;Debet;D;W&V;overwerktoeslag | tags: w&v
+4002;Feestdagentoeslag;W;Winst & Verlies;RGS versie 3.5;WPerLesVag;Vakantiebijslag lonen en salarissen;120;Overige kosten;Debet;D;W&V;feestdagentoeslag | tags: w&v
+4003;Mutatie vakantiegeldreservering;W;Winst & Verlies;RGS versie 3.5;WPerLesVag;Vakantiebijslag lonen en salarissen;120;Overige kosten;Debet;D;BOTH;mutatie vakantiegeldreservering | tags: balans_en_w&v
+4004;Mutatie vakantiedagenreservering;W;Winst & Verlies;RGS versie 3.5;WPerLesVad;Vakantiedagen lonen en salarissen;120;Overige kosten;Debet;D;BOTH;mutatie vakantiedagenreservering | tags: balans_en_w&v
+4005;Bijzondere beloningen;W;Winst & Verlies;RGS versie 3.5;WPerLesOlr;Overige lonen en salarissen lonen en salarissen;120;Overige kosten;Debet;D;W&V;bijzondere beloningen | tags: w&v
+4006;Bijdrage ziektekosten;W;Winst & Verlies;RGS versie 3.5;WPerSolBiz;Bijdrage ziektekostenverzekering sociale lasten;120;Overige kosten;Debet;D;W&V;bijdrage ziektekosten | tags: w&v
+4007;Ziekengeld;W;Winst & Verlies;RGS versie 3.5;WBedOvpZie;Ziekengeldverzekering overige personeelskosten;120;Overige kosten;Debet;D;W&V;ziekengeld | tags: w&v
+4008;Sociale lasten werkgever;W;Winst & Verlies;RGS versie 3.5;WPerSolPsv;Premies sociale verzekeringen sociale lasten;120;Overige kosten;Debet;D;W&V;sociale lasten werkgever | tags: w&v
+4009;Pensioenpremies;W;Winst & Verlies;RGS versie 3.5;WPerPenPen;Pensioenpremies pensioenlasten;120;Overige kosten;Debet;D;W&V;pensioenpremies | tags: w&v
+4010;Opbrengsten afdrachtverminderingen;W;Winst & Verlies;RGS versie 3.5;WPerLesOlr;Overige lonen en salarissen lonen en salarissen;120;Overige kosten;Debet;D;W&V;opbrengsten afdrachtverminderingen | tags: w&v
+4011;Kosten spaarloon;W;Winst & Verlies;RGS versie 3.5;WPerLesLon;Lonen en salarissen;120;Overige kosten;Debet;D;W&V;"kosten spaarloon | tags: loon; personeel; w&v"
+4012;Mutatie pensioenvoorziening;W;Winst & Verlies;RGS versie 3.5;WPerPenDpe;Dotatie pensioenvoorziening directie;120;Overige kosten;Debet;D;BOTH;mutatie pensioenvoorziening | tags: balans_en_w&v
+4013;Oprenting reserve uitgesteld salaris;W;Winst & Verlies;RGS versie 3.5;WPerLesLon;Lonen en salarissen;120;Overige kosten;Debet;D;W&V;"oprenting reserve uitgesteld salaris | tags: loon; personeel; w&v"
+4014;Mutatie reservering 2;W;Winst & Verlies;RGS versie 3.5;WPerLesVad;Vakantiedagen lonen en salarissen;120;Overige kosten;Debet;D;BOTH;mutatie reservering 2 | tags: balans_en_w&v
+4015;Mutatie reservering 3;W;Winst & Verlies;RGS versie 3.5;WPerLesVad;Vakantiedagen lonen en salarissen;120;Overige kosten;Debet;D;BOTH;mutatie reservering 3 | tags: balans_en_w&v
+4016;Mutatie reservering 4;W;Winst & Verlies;RGS versie 3.5;WPerLesVad;Vakantiedagen lonen en salarissen;120;Overige kosten;Debet;D;BOTH;mutatie reservering 4 | tags: balans_en_w&v
+4017;Eindheffingen;W;Winst & Verlies;RGS versie 3.5;WPerLesLon;Lonen en salarissen;120;Overige kosten;Debet;D;W&V;eindheffingen | tags: w&v
+4020;Doorbelaste loonkosten 1;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Credit;C;W&V;"doorbelaste loonkosten 1 | tags: loon; personeel; w&v"
+4021;Doorbelaste loonkosten 2;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Credit;C;W&V;"doorbelaste loonkosten 2 | tags: loon; personeel; w&v"
+4022;Doorbelaste loonkosten 3;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Credit;C;W&V;"doorbelaste loonkosten 3 | tags: loon; personeel; w&v"
+4023;Doorbelaste loonkosten 4;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Credit;C;W&V;"doorbelaste loonkosten 4 | tags: loon; personeel; w&v"
+4024;Doorbelaste loonkosten 5;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Credit;C;W&V;"doorbelaste loonkosten 5 | tags: loon; personeel; w&v"
+4030;Onkostenvergoedingen personeel;W;Winst & Verlies;RGS versie 3.5;WBedOvpWer;Wervingskosten overige personeelskosten;121;Algemene kosten;Debet;D;W&V;"onkostenvergoedingen personeel | tags: loon; personeel; w&v"
+4034;Kilometervergoeding personeel;W;Winst & Verlies;RGS versie 3.5;WBedWkrWkgVro;Vergoeding reiskosten (tot € 0,19) per kilometer overige personeelsgerelateerde kosten;121;Algemene kosten;Debet;D;W&V;"kilometervergoeding personeel | tags: loon; personeel; w&v"
+4035;Reiskostenvergoedingen personeel;W;Winst & Verlies;RGS versie 3.5;WBedWkrWkgVro;Vergoeding reiskosten (tot € 0,19) per kilometer overige personeelsgerelateerde kosten;121;Algemene kosten;Debet;D;W&V;"reiskostenvergoedingen personeel | tags: loon; personeel; w&v"
+4036;Onbelaste vergoedingen;W;Winst & Verlies;RGS versie 3.5;WBedWkrWkgVro;Vergoeding reiskosten (tot € 0,19) per kilometer overige personeelsgerelateerde kosten;121;Algemene kosten;Debet;D;W&V;onbelaste vergoedingen | tags: w&v
+4037;Bijdrage leaseauto;W;Winst & Verlies;RGS versie 3.5;WBedAutBwl;Bijdrage werknemers leaseregeling autokosten;121;Algemene kosten;Debet;D;W&V;"bijdrage leaseauto | tags: auto; vervoermiddel; w&v"
+4038;Inhouding diversen;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;121;Algemene kosten;Debet;D;W&V;inhouding diversen | tags: w&v
+4039;Premiekorting;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;121;Algemene kosten;Debet;D;W&V;premiekorting | tags: w&v
+4040;Kosten Arbodienst;W;Winst & Verlies;RGS versie 3.5;WBedOvpAbd;Arbodienst overige personeelskosten;120;Overige kosten;Debet;D;W&V;kosten arbodienst | tags: w&v
+4045;Verzekeringen personeel;W;Winst & Verlies;RGS versie 3.5;WBedOvpZie;Ziekengeldverzekering overige personeelskosten;120;Overige kosten;Debet;D;W&V;"verzekeringen personeel | tags: loon; personeel; verzekering; w&v"
+4050;Kantinekosten;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Debet;D;W&V;kantinekosten | tags: w&v
+4060;Ziekengeldverzekering;W;Winst & Verlies;RGS versie 3.5;WBedOvpZie;Ziekengeldverzekering overige personeelskosten;120;Overige kosten;Debet;D;W&V;"ziekengeldverzekering | tags: verzekering; w&v"
+4070;Opleidingskosten personeel;W;Winst & Verlies;RGS versie 3.5;WBedOvpWer;Wervingskosten overige personeelskosten;120;Overige kosten;Debet;D;W&V;"opleidingskosten personeel | tags: loon; personeel; w&v"
+4075;Bedrijfskleding;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Debet;D;W&V;bedrijfskleding | tags: w&v
+4080;Uitzendkrachten;W;Winst & Verlies;RGS versie 3.5;WBedOvpUik;Uitzendkrachten overige personeelskosten;120;Overige kosten;Debet;D;W&V;uitzendkrachten | tags: w&v
+4090;Overige personeelskosten;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Debet;D;W&V;"overige personeelskosten | tags: loon; personeel; w&v"
+4095;Werkkostenregeling;W;Winst & Verlies;RGS versie 3.5;WBedOvpOvp;Overige personeelskosten niet elders genoemd overige personeelskosten;120;Overige kosten;Debet;D;W&V;werkkostenregeling | tags: w&v
+4100;Huur;W;Winst & Verlies;RGS versie 3.5;WBedHuiBeh;Betaalde huur huisvestingskosten;121;Algemene kosten;Debet;D;W&V;"huur | tags: huur; w&v"
+4105;Energiekosten;W;Winst & Verlies;RGS versie 3.5;WBedHuiGweElk;Elektra huisvestingskosten;120;Overige kosten;Debet;D;W&V;energiekosten | tags: w&v
+4110;Onderhoud gebouwen;W;Winst & Verlies;RGS versie 3.5;WBedHuiOng;Onderhoud gebouwen huisvestingskosten;121;Algemene kosten;Debet;D;W&V;"onderhoud gebouwen | tags: gebouw; huisvesting; pand; w&v"
+4120;Verzekeringen gebouwen;W;Winst & Verlies;RGS versie 3.5;WBedHuiAoz;Assurantiepremies onroerende zaak huisvestingskosten;121;Algemene kosten;Debet;D;W&V;"verzekeringen gebouwen | tags: gebouw; huisvesting; pand; verzekering; w&v"
+4130;Vaste lasten gebouwen;W;Winst & Verlies;RGS versie 3.5;WBedHuiOvh;Overige vaste huisvestingslasten huisvestingskosten;121;Algemene kosten;Debet;D;W&V;"vaste lasten gebouwen | tags: gebouw; huisvesting; pand; w&v"
+4140;Schoonmaakkosten;W;Winst & Verlies;RGS versie 3.5;WBedHuiSch;Schoonmaakkosten huisvestingskosten;121;Algemene kosten;Debet;D;W&V;schoonmaakkosten | tags: w&v
+4150;Beveiligingskosten;W;Winst & Verlies;RGS versie 3.5;WBedHuiOvh;Overige vaste huisvestingslasten huisvestingskosten;90;Algemeen;Debet;D;W&V;beveiligingskosten | tags: w&v
+4180;Mutatie voorziening groot onderhoud;W;Winst & Verlies;RGS versie 3.5;WBedHuiDvg;Dotatie voorziening groot onderhoud gebouwen huisvestingskosten;120;Overige kosten;Debet;D;BOTH;mutatie voorziening groot onderhoud | tags: balans_en_w&v
+4190;Overige huisvestingskosten;W;Winst & Verlies;RGS versie 3.5;WBedHuiOhv;Overige huisvestingskosten huisvestingskosten;121;Algemene kosten;Debet;D;W&V;"overige huisvestingskosten | tags: gebouw; huisvesting; pand; w&v"
+4200;Huur machines en installaties;W;Winst & Verlies;RGS versie 3.5;WBedEemHum;Huur machines exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;"huur machines en installaties | tags: huur; w&v"
+4210;Onderhoud machines en installaties;W;Winst & Verlies;RGS versie 3.5;WBedEemOme;Onderhoud machines exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;onderhoud machines en installaties | tags: w&v
+4220;Verzekeringen machines en installaties;W;Winst & Verlies;RGS versie 3.5;WBedEemAme;Assurantiepremie machines en inventaris;121;Algemene kosten;Debet;D;W&V;"verzekeringen machines en installaties | tags: verzekering; w&v"
+4230;Brandstoffen machines en installaties;W;Winst & Verlies;RGS versie 3.5;WBedEemBrm;Brandstof machines exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;brandstoffen machines en installaties | tags: w&v
+4240;Klein materiaal;W;Winst & Verlies;RGS versie 3.5;WBedEemKam;Kleine aanschaffingen machines exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;klein materiaal | tags: w&v
+4245;Blanco exploitatiekosten;W;Winst & Verlies;RGS versie 3.5;WBedEemOee;Overige exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;blanco exploitatiekosten | tags: w&v
+4290;Overige exploitatiekosten;W;Winst & Verlies;RGS versie 3.5;WBedEemOee;Overige exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;overige exploitatiekosten | tags: w&v
+4400;Motorrijtuigenbelasting;W;Winst & Verlies;RGS versie 3.5;WBedAutMot;Motorrijtuigenbelasting auto's autokosten;121;Algemene kosten;Debet;D;W&V;motorrijtuigenbelasting | tags: w&v
+4410;Onderhoud vervoermiddelen;W;Winst & Verlies;RGS versie 3.5;WBedAutRoa;Reparatie en onderhoud auto's autokosten;121;Algemene kosten;Debet;D;W&V;"onderhoud vervoermiddelen | tags: auto; vervoermiddel; w&v"
+4420;Verzekeringen vervoermiddelen;W;Winst & Verlies;RGS versie 3.5;WBedAutAsa;Assurantiepremie auto's autokosten;121;Algemene kosten;Debet;D;W&V;"verzekeringen vervoermiddelen | tags: auto; vervoermiddel; verzekering; w&v"
+4430;Brandstoffen;W;Winst & Verlies;RGS versie 3.5;WBedAutBra;Brandstofkosten auto's autokosten;121;Algemene kosten;Debet;D;W&V;brandstoffen | tags: w&v
+4440;Leasekosten;W;Winst & Verlies;RGS versie 3.5;WBedAutOpa;Operational leasing auto's autokosten;121;Algemene kosten;Debet;D;W&V;leasekosten | tags: w&v
+4450;Boetes vervoermiddelen;W;Winst & Verlies;RGS versie 3.5;WBedAutBeb;Boetes en bekeuringen autokosten;121;Algemene kosten;Debet;D;W&V;"boetes vervoermiddelen | tags: auto; vervoermiddel; w&v"
+4460;BTW privé gebruik auto;W;Winst & Verlies;RGS versie 3.5;WBedAutPga;Privé-gebruik auto's autokosten;121;Algemene kosten;Debet;D;BOTH;"btw privé gebruik auto | tags: auto; balans_en_w&v; btw; vervoermiddel"
+4461;BTW privé gebruik auto;W;Winst & Verlies;RGS versie 3.5;WBedAutPga;Privé-gebruik auto's autokosten;110;Omzet;Credit;C;BOTH;"btw privé gebruik auto | tags: auto; balans_en_w&v; btw; vervoermiddel"
+4470;Privégebruik auto;W;Winst & Verlies;RGS versie 3.5;WBedAutPga;Privé-gebruik auto's autokosten;121;Algemene kosten;Debet;D;W&V;"privégebruik auto | tags: auto; vervoermiddel; w&v"
+4480;Kilometervergoeding;W;Winst & Verlies;RGS versie 3.5;WBedAutKil;Kilometervergoeding autokosten;121;Algemene kosten;Debet;D;W&V;kilometervergoeding | tags: w&v
+4490;Overige autokosten;W;Winst & Verlies;RGS versie 3.5;WBedAutOak;Overige autokosten autokosten;121;Algemene kosten;Debet;D;W&V;"overige autokosten | tags: auto; vervoermiddel; w&v"
+4500;Managementfee;W;Winst & Verlies;RGS versie 3.5;WBedOvpMaf;Management fee overige personeelskosten;121;Algemene kosten;Debet;D;W&V;managementfee | tags: w&v
+4510;Mutatie voorziening dubieuze debiteuren;W;Winst & Verlies;RGS versie 3.5;WBedVkkDvd;Dotatie voorziening dubieuze debiteuren verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;BOTH;"mutatie voorziening dubieuze debiteuren | tags: balans_en_w&v; debiteuren"
+4515;Afboeking oninbare debiteuren;W;Winst & Verlies;RGS versie 3.5;WBedAlkOal;Algemene kosten andere kosten;121;Algemene kosten;Debet;D;W&V;"afboeking oninbare debiteuren | tags: debiteuren; w&v"
+4520;Representatiekosten;W;Winst & Verlies;RGS versie 3.5;WBedVkkRep;Representatiekosten verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;representatiekosten | tags: w&v
+4530;Relatiegeschenken;W;Winst & Verlies;RGS versie 3.5;WBedVkkRel;Relatiegeschenken verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;relatiegeschenken | tags: w&v
+4540;Reis- en verblijfkosten;W;Winst & Verlies;RGS versie 3.5;WBedVkkRev;Reis- en verblijfkosten verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;reis- en verblijfkosten | tags: w&v
+4550;Giften / sponsering;W;Winst & Verlies;RGS versie 3.5;WBedVkkKos;Kosten sponsoring verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;giften / sponsering | tags: w&v
+4560;Reclame- en advertentiekosten;W;Winst & Verlies;RGS versie 3.5;WBedVkkRea;Reclame- en advertentiekosten verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;reclame- en advertentiekosten | tags: w&v
+4565;Blanco verkoopkosten;W;Winst & Verlies;RGS versie 3.5;WBedVkkOvr;Overige verkoopkosten verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;blanco verkoopkosten | tags: w&v
+4570;Kleine ondernemersregeling;W;Winst & Verlies;RGS versie 3.5;WBedVkkOvr;Overige verkoopkosten verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;kleine ondernemersregeling | tags: w&v
+4575;Kasverschillen;W;Winst & Verlies;RGS versie 3.5;WBedAdlKav;Kasverschillen administratieve lasten;121;Algemene kosten;Debet;D;W&V;kasverschillen | tags: w&v
+4580;Betalingskortingen;W;Winst & Verlies;RGS versie 3.5;WKprBtkBed;Betalingskorting debiteuren;121;Algemene kosten;Debet;D;W&V;betalingskortingen | tags: w&v
+4585;Koersverschillen;W;Winst & Verlies;RGS versie 3.5;WBedAdlVal;Valutaomrekeningsverschillen administratieve lasten;120;Overige kosten;Debet;D;W&V;koersverschillen | tags: w&v
+4590;Overige verkoopkosten;W;Winst & Verlies;RGS versie 3.5;WBedVkkOvr;Overige verkoopkosten verkoop gerelateerde kosten;121;Algemene kosten;Debet;D;W&V;overige verkoopkosten | tags: w&v
+4600;Huur inventaris;W;Winst & Verlies;RGS versie 3.5;WBedEemHui;Huur inventaris exploitatie- en machinekosten;121;Algemene kosten;Debet;D;W&V;"huur inventaris | tags: huur; w&v"
+4610;Kantoorbenodigdheden;W;Winst & Verlies;RGS versie 3.5;WBedKanKan;Kantoorbenodigdheden kantoorkosten;121;Algemene kosten;Debet;D;W&V;kantoorbenodigdheden | tags: w&v
+4620;Automatiseringskosten;W;Winst & Verlies;RGS versie 3.5;WBedKanKoa;Kosten automatisering kantoorkosten;121;Algemene kosten;Debet;D;W&V;"automatiseringskosten | tags: auto; vervoermiddel; w&v"
+4630;Communicatiekosten;W;Winst & Verlies;RGS versie 3.5;WBedKanTef;Telefoonkosten kantoorkosten;121;Algemene kosten;Debet;D;W&V;communicatiekosten | tags: w&v
+4631;Privegebruik communicatiekosten;W;Winst & Verlies;RGS versie 3.5;WBedKanPrt;Privé-gebruik telefoon kantoorkosten;110;Omzet;Credit;C;W&V;privegebruik communicatiekosten | tags: w&v
+4640;Kleine aanschaffingen;W;Winst & Verlies;RGS versie 3.5;WBedKanKak;Kleine aanschaffingen kantoorinventaris kantoorkosten;121;Algemene kosten;Debet;D;W&V;kleine aanschaffingen | tags: w&v
+4650;Contributies en abonnementen;W;Winst & Verlies;RGS versie 3.5;WBedKanCea;Contributies en abonnementen kantoorkosten;121;Algemene kosten;Debet;D;W&V;contributies en abonnementen | tags: w&v
+4660;Onderhoud inventaris;W;Winst & Verlies;RGS versie 3.5;WBedKanRok;Reparatie en onderhoud kantoorinventaris kantoorkosten;121;Algemene kosten;Debet;D;W&V;onderhoud inventaris | tags: w&v
+4670;Porto kosten;W;Winst & Verlies;RGS versie 3.5;WBedKanPor;Porti kantoorkosten;121;Algemene kosten;Debet;D;W&V;porto kosten | tags: w&v
+4680;Blanco kantoorkosten;W;Winst & Verlies;RGS versie 3.5;WBedKanOka;Overige kantoorkosten kantoorkosten;121;Algemene kosten;Debet;D;W&V;blanco kantoorkosten | tags: w&v
+4690;Overige kantoorkosten;W;Winst & Verlies;RGS versie 3.5;WBedKanOka;Overige kantoorkosten kantoorkosten;121;Algemene kosten;Debet;D;W&V;overige kantoorkosten | tags: w&v
+4700;Afschrijvingskosten goodwill;W;Winst & Verlies;RGS versie 3.5;WAfsAivGoo;Afschrijvingen goodwill - fiscaal aftrekbaar - afschrijvingen op immateriële vaste activa;122;Afschrijvingskosten;Debet;D;BOTH;"afschrijvingskosten goodwill | tags: afschrijving; balans_en_w&v"
+4710;Afschrijvingskosten gebouwen;W;Winst & Verlies;RGS versie 3.5;WAfsAmvBeg;Afschrijvingen Bedrijfsgebouwen;122;Afschrijvingskosten;Debet;D;BOTH;"afschrijvingskosten gebouwen | tags: afschrijving; balans_en_w&v; gebouw; huisvesting; pand"
+4720;Afschrijvingskosten machines en installaties;W;Winst & Verlies;RGS versie 3.5;WAfsAmvMei;Afschrijvingen Machines en installaties;122;Afschrijvingskosten;Debet;D;BOTH;"afschrijvingskosten machines en installaties | tags: afschrijving; balans_en_w&v"
+4730;Afschrijvingskosten bedrijfsinventaris;W;Winst & Verlies;RGS versie 3.5;WAfsAmvBei;Afschrijvingen Inventaris;122;Afschrijvingskosten;Debet;D;BOTH;"afschrijvingskosten bedrijfsinventaris | tags: afschrijving; balans_en_w&v"
+4760;Afschrijvingskosten vervoermiddelen;W;Winst & Verlies;RGS versie 3.5;WAfsAmvTev;Afschrijvingen Automobielen en overige transportmiddelen;122;Afschrijvingskosten;Debet;D;BOTH;"afschrijvingskosten vervoermiddelen | tags: afschrijving; auto; balans_en_w&v; vervoermiddel"
+4790;Boekwinst -verlies;W;Winst & Verlies;RGS versie 3.5;WAfsRvmBei;Boekresultaat Inventaris boekresultaat op materiële vaste activa;122;Afschrijvingskosten;Debet;D;W&V;boekwinst -verlies | tags: w&v
+4800;Accountantskosten;W;Winst & Verlies;RGS versie 3.5;WBedAeaAeaAnc;Accountantshonoraria inzake andere niet-controlediensten accountants- en advieskosten;121;Algemene kosten;Debet;D;W&V;accountantskosten | tags: w&v
+4801;Privegebruik accountantskosten;W;Winst & Verlies;RGS versie 3.5;WBedAeaPda;Privé-gedeelte accountant accountants- en advieskosten;110;Omzet;Credit;C;W&V;privegebruik accountantskosten | tags: w&v
+4805;Blanco algemene kosten;W;Winst & Verlies;RGS versie 3.5;WBedAlkOal;Algemene kosten andere kosten;121;Algemene kosten;Debet;D;W&V;blanco algemene kosten | tags: w&v
+4810;Juridische kosten;W;Winst & Verlies;RGS versie 3.5;WBedAeaAej;Advocaat en juridisch advies accountants- en advieskosten;121;Algemene kosten;Debet;D;W&V;juridische kosten | tags: w&v
+4820;Verzekeringen;W;Winst & Verlies;RGS versie 3.5;WBedAssOva;Overige assurantiepremies assurantiekosten;121;Algemene kosten;Debet;D;W&V;"verzekeringen | tags: verzekering; w&v"
+4860;Advieskosten;W;Winst & Verlies;RGS versie 3.5;WBedAeaAdv;Overige advieskosten accountants- en advieskosten;121;Algemene kosten;Debet;D;W&V;advieskosten | tags: w&v
+4870;Loonadministratie;W;Winst & Verlies;RGS versie 3.5;WBedKanBoe;Boekhouding kantoorkosten;121;Algemene kosten;Debet;D;W&V;"loonadministratie | tags: loon; personeel; w&v"
+4890;Overige algemene kosten;W;Winst & Verlies;RGS versie 3.5;WBedAlkOal;Algemene kosten andere kosten;121;Algemene kosten;Debet;D;W&V;overige algemene kosten | tags: w&v
+4900;Rente en kosten bank;W;Winst & Verlies;RGS versie 3.5;WFbeOrlRos;Rentelasten overige schulden rentelasten en soortgelijke kosten;160;Rente inkomsten;Debet;D;W&V;"rente en kosten bank | tags: bank; rente; w&v"
+4901;Rente en kosten Belastingdienst;W;Winst & Verlies;RGS versie 3.5;WFbeRlmRbb;Rentebaten belastingen rentebaten en soortgelijke opbrengsten;160;Rente inkomsten;Debet;D;W&V;"rente en kosten belastingdienst | tags: rente; w&v"
+4902;Rente Reserve Uitgesteld Salaris;W;Winst & Verlies;RGS versie 3.5;WFbeOrlRos;Rentelasten overige schulden rentelasten en soortgelijke kosten;160;Rente inkomsten;Debet;D;W&V;"rente reserve uitgesteld salaris | tags: loon; personeel; rente; w&v"
+4903;Rente spaarrekening;W;Winst & Verlies;RGS versie 3.5;WFbeRlmObr;Rentebaten bankrekeningen rentebaten en soortgelijke opbrengsten;160;Rente inkomsten;Debet;D;W&V;"rente spaarrekening | tags: rente; w&v"
+4904;Koersresultaat effecten;W;Winst & Verlies;RGS versie 3.5;WOvtRofOoe;Opbrengst overige effecten opbrengst van vorderingen die tot de vaste activa behoren en van effecten;160;Rente inkomsten;Credit;C;W&V;koersresultaat effecten | tags: w&v
+4905;Boetes belastingdienst;W;Winst & Verlies;RGS versie 3.5;WBedAdlBev;Boetes en verhogingen belastingen en premies sociale verzekeringen administratieve lasten;160;Rente inkomsten;Debet;D;W&V;boetes belastingdienst | tags: w&v
+4910;Rente rekening-courant directie;W;Winst & Verlies;RGS versie 3.5;WWfaBwvFvaRcd;Rekening-courant directie;160;Rente inkomsten;Debet;D;W&V;"rente rekening-courant directie | tags: rente; w&v"
+4911;Rente rekening-courant directie 2;W;Winst & Verlies;RGS versie 3.5;WWfaBwvFvaRcd;Rekening-courant directie;160;Rente inkomsten;Debet;D;W&V;"rente rekening-courant directie 2 | tags: rente; w&v"
+4920;Interest loan receivable M van Hattem;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRsa;Rentelasten schulden aan aandeelhouders rentelasten en soortgelijke kosten;160;Rente inkomsten;Credit;C;W&V;interest loan receivable m van hattem | tags: w&v
+4921;Rente lening u/g 2;W;Winst & Verlies;RGS versie 3.5;WOvtRofRov;Rentebaten overige vorderingen opbrengst van vorderingen die tot de vaste activa behoren en van effecten;160;Rente inkomsten;Credit;C;BOTH;"rente lening u/g 2 | tags: balans_en_w&v; lening; rente"
+4922;Rente lening u/g 3;W;Winst & Verlies;RGS versie 3.5;WOvtRofRov;Rentebaten overige vorderingen opbrengst van vorderingen die tot de vaste activa behoren en van effecten;160;Rente inkomsten;Credit;C;BOTH;"rente lening u/g 3 | tags: balans_en_w&v; lening; rente"
+4923;Rente lening u/g 4;W;Winst & Verlies;RGS versie 3.5;WOvtRofRov;Rentebaten overige vorderingen opbrengst van vorderingen die tot de vaste activa behoren en van effecten;160;Rente inkomsten;Credit;C;BOTH;"rente lening u/g 4 | tags: balans_en_w&v; lening; rente"
+4924;Rente lening u/g 5;W;Winst & Verlies;RGS versie 3.5;WOvtRofRov;Rentebaten overige vorderingen opbrengst van vorderingen die tot de vaste activa behoren en van effecten;160;Rente inkomsten;Credit;C;BOTH;"rente lening u/g 5 | tags: balans_en_w&v; lening; rente"
+4950;Rente rekening-courant groepsmaatschappijen 1;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRgi;Rentelasten schulden groepsmaatschappijen binnenland rentelasten en soortgelijke kosten;121;Algemene kosten;Debet;D;W&V;"rente rekening-courant groepsmaatschappijen 1 | tags: rente; w&v"
+4951;Rente rekening-courant groepsmaatschappijen 2;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRgi;Rentelasten schulden groepsmaatschappijen binnenland rentelasten en soortgelijke kosten;121;Algemene kosten;Debet;D;W&V;"rente rekening-courant groepsmaatschappijen 2 | tags: rente; w&v"
+4952;Rente rekening-courant groepsmaatschappijen 3;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRgi;Rentelasten schulden groepsmaatschappijen binnenland rentelasten en soortgelijke kosten;121;Algemene kosten;Debet;D;W&V;"rente rekening-courant groepsmaatschappijen 3 | tags: rente; w&v"
+4953;Rente rekening-courant groepsmaatschappijen 4;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRgi;Rentelasten schulden groepsmaatschappijen binnenland rentelasten en soortgelijke kosten;121;Algemene kosten;Debet;D;W&V;"rente rekening-courant groepsmaatschappijen 4 | tags: rente; w&v"
+4954;Rente rekening-courant groepsmaatschappijen 5;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRgi;Rentelasten schulden groepsmaatschappijen binnenland rentelasten en soortgelijke kosten;121;Algemene kosten;Debet;D;W&V;"rente rekening-courant groepsmaatschappijen 5 | tags: rente; w&v"
+4960;Rente hypothecaire lening 1;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRhl;Rentelasten hypethecaire leningen;160;Rente inkomsten;Debet;D;BOTH;"rente hypothecaire lening 1 | tags: balans_en_w&v; lening; rente"
+4961;Rente hypothecaire lening 2;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRhl;Rentelasten hypethecaire leningen;160;Rente inkomsten;Debet;D;BOTH;"rente hypothecaire lening 2 | tags: balans_en_w&v; lening; rente"
+4962;Rente hypothecaire lening 3;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRhl;Rentelasten hypethecaire leningen;160;Rente inkomsten;Debet;D;BOTH;"rente hypothecaire lening 3 | tags: balans_en_w&v; lening; rente"
+4963;Rente hypothecaire lening 4;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRhl;Rentelasten hypethecaire leningen;160;Rente inkomsten;Debet;D;BOTH;"rente hypothecaire lening 4 | tags: balans_en_w&v; lening; rente"
+4964;Rente hypothecaire lening 5;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRhl;Rentelasten hypethecaire leningen;160;Rente inkomsten;Debet;D;BOTH;"rente hypothecaire lening 5 | tags: balans_en_w&v; lening; rente"
+4970;Rente lening o/g;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRle;Rentelasten overige leningen;160;Rente inkomsten;Debet;D;BOTH;"rente lening o/g | tags: balans_en_w&v; lening; rente"
+4971;Rente lening o/g 2;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRle;Rentelasten overige leningen;160;Rente inkomsten;Debet;D;BOTH;"rente lening o/g 2 | tags: balans_en_w&v; lening; rente"
+4972;Rente lening o/g 3;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRle;Rentelasten overige leningen;160;Rente inkomsten;Debet;D;BOTH;"rente lening o/g 3 | tags: balans_en_w&v; lening; rente"
+4973;Rente lening o/g 4;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRle;Rentelasten overige leningen;160;Rente inkomsten;Debet;D;BOTH;"rente lening o/g 4 | tags: balans_en_w&v; lening; rente"
+4974;Rente lening o/g 5;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRle;Rentelasten overige leningen;160;Rente inkomsten;Debet;D;BOTH;"rente lening o/g 5 | tags: balans_en_w&v; lening; rente"
+4980;Rente lease Volvo H-384-FP;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRlv;Rentelasten leaseverplichtingen;160;Rente inkomsten;Debet;D;W&V;"rente lease volvo h-384-fp | tags: rente; w&v"
+4981;Rente lease Range Rover HND05F;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRlv;Rentelasten leaseverplichtingen;160;Rente inkomsten;Debet;D;W&V;"rente lease range rover hnd05f | tags: rente; w&v"
+4982;Rente lease 3;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRlv;Rentelasten leaseverplichtingen;160;Rente inkomsten;Debet;D;W&V;"rente lease 3 | tags: rente; w&v"
+4983;Rente lease 4;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRlv;Rentelasten leaseverplichtingen;160;Rente inkomsten;Debet;D;W&V;"rente lease 4 | tags: rente; w&v"
+4984;Rente lease 5;W;Winst & Verlies;RGS versie 3.5;WFbeRlsRlv;Rentelasten leaseverplichtingen;160;Rente inkomsten;Debet;D;W&V;"rente lease 5 | tags: rente; w&v"
+4990;Oprenting lijfrenteverplichting;W;Winst & Verlies;RGS versie 3.5;WFbeOrlRli;Rentelasten lijfrenteverplichtingen;121;Algemene kosten;Debet;D;W&V;"oprenting lijfrenteverplichting | tags: rente; w&v"
+7000;Inkopen;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen | tags: w&v
+7010;Inkopen project kiezen zonder verliezen;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen project kiezen zonder verliezen | tags: w&v
+7020;Inkopen 3;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen 3 | tags: w&v
+7030;Inkopen 4;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen 4 | tags: w&v
+7040;Inkopen 5;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen 5 | tags: w&v
+7050;Inkopen buitenland binnen EU;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen buitenland binnen eu | tags: w&v
+7060;Inkopen buitenland buiten EU;W;Winst & Verlies;RGS versie 3.5;WKprInhInh;Inkoopwaarde handelsgoederen;111;Kostprijs van de omzet;Debet;D;W&V;inkopen buitenland buiten eu | tags: w&v
+7100;Werk derden;W;Winst & Verlies;RGS versie 3.5;WKprKuwKuw;Kosten van uitbesteed werk;111;Kostprijs van de omzet;Debet;D;W&V;werk derden | tags: w&v
+7110;Werk derden 2;W;Winst & Verlies;RGS versie 3.5;WKprKuwKuw;Kosten van uitbesteed werk;111;Kostprijs van de omzet;Debet;D;W&V;werk derden 2 | tags: w&v
+7120;Werk derden 3;W;Winst & Verlies;RGS versie 3.5;WKprKuwKuw;Kosten van uitbesteed werk;111;Kostprijs van de omzet;Debet;D;W&V;werk derden 3 | tags: w&v
+7130;Werk derden 4;W;Winst & Verlies;RGS versie 3.5;WKprKuwKuw;Kosten van uitbesteed werk;111;Kostprijs van de omzet;Debet;D;W&V;werk derden 4 | tags: w&v
+7140;Werk derden 5;W;Winst & Verlies;RGS versie 3.5;WKprKuwKuw;Kosten van uitbesteed werk;111;Kostprijs van de omzet;Debet;D;W&V;werk derden 5 | tags: w&v
+7150;Werk derden BTW verlegd;W;Winst & Verlies;RGS versie 3.5;WKprKuwKuw;Kosten van uitbesteed werk;111;Kostprijs van de omzet;Debet;D;BOTH;"werk derden btw verlegd | tags: balans_en_w&v; btw"
+7200;Prijsverschillen;W;Winst & Verlies;RGS versie 3.5;WKprBtkBec;Betalingskortingen op inkopen inkoopwaarde handels- en productiegoederen;111;Kostprijs van de omzet;Debet;D;W&V;prijsverschillen | tags: w&v
+7205;Kasverschillen;W;Winst & Verlies;RGS versie 3.5;WKprLebLeb;Inkoopkortingen en bonussen inkoopwaarde handels- en productiegoederen;111;Kostprijs van de omzet;Debet;D;W&V;kasverschillen | tags: w&v
+7210;Kredietbeperking;W;Winst & Verlies;RGS versie 3.5;WKprBtkBec;Betalingskortingen op inkopen inkoopwaarde handels- en productiegoederen;111;Kostprijs van de omzet;Debet;D;W&V;kredietbeperking | tags: w&v
+7300;Mutatie voorraad;W;Winst & Verlies;RGS versie 3.5;WKprVomVom;Voorraadmutatie inkoopwaarde handels- en productiegoederen;111;Kostprijs van de omzet;Credit;C;BOTH;"mutatie voorraad | tags: balans_en_w&v; voorraad"
+7310;Mutatie onderhanden werk;W;Winst & Verlies;RGS versie 3.5;WWivWowWow;Wijziging in vooraden onderhanden werk;111;Kostprijs van de omzet;Credit;C;BOTH;mutatie onderhanden werk | tags: balans_en_w&v
+7320;Emballage;W;Winst & Verlies;RGS versie 3.5;WKprKvgKvg;Kosten van grond- en hulpstoffen, ingekocht in Nederland kosten van grond- en hulpstoffen;111;Kostprijs van de omzet;Debet;D;W&V;emballage | tags: w&v
+7400;Doorbelaste kosten 1;W;Winst & Verlies;RGS versie 3.5;WBedAlkDak;Doorberekende kosten andere kosten;111;Kostprijs van de omzet;Credit;C;W&V;doorbelaste kosten 1 | tags: w&v
+7410;Doorbelaste kosten 2;W;Winst & Verlies;RGS versie 3.5;WBedAlkDak;Doorberekende kosten andere kosten;111;Kostprijs van de omzet;Credit;C;W&V;doorbelaste kosten 2 | tags: w&v
+7420;Doorbelaste kosten 3;W;Winst & Verlies;RGS versie 3.5;WBedAlkDak;Doorberekende kosten andere kosten;111;Kostprijs van de omzet;Credit;C;W&V;doorbelaste kosten 3 | tags: w&v
+7430;Doorbelaste kosten 4;W;Winst & Verlies;RGS versie 3.5;WBedAlkDak;Doorberekende kosten andere kosten;111;Kostprijs van de omzet;Credit;C;W&V;doorbelaste kosten 4 | tags: w&v
+7440;Doorbelaste kosten 5;W;Winst & Verlies;RGS versie 3.5;WBedAlkDak;Doorberekende kosten andere kosten;111;Kostprijs van de omzet;Credit;C;W&V;doorbelaste kosten 5 | tags: w&v
+7500;Privegebruik goederen;W;Winst & Verlies;RGS versie 3.5;WKprPrgPrg;Privé-gebruik goederen inkoopwaarde handels- en productiegoederen;110;Omzet;Credit;C;W&V;privegebruik goederen | tags: w&v
+8000;Omzet;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet | tags: w&v
+8005;Revenue Solarpannels;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;revenue solarpannels | tags: w&v
+8010;Omzet boek;W;Winst & Verlies;RGS versie 3.5;WOmzNopOlv;1b. Netto-omzet uit leveringen geproduceerde goederen belast met laag tarief;110;Omzet;Credit;C;W&V;omzet boek | tags: w&v
+8015;Omzet 4;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 4 | tags: w&v
+8020;Omzet 5;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 5 | tags: w&v
+8025;Omzet 6;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 6 | tags: w&v
+8030;Omzet 7;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 7 | tags: w&v
+8035;Omzet 8;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 8 | tags: w&v
+8040;Omzet 9;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 9 | tags: w&v
+8045;Omzet 10;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 10 | tags: w&v
+8050;Omzet 11;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 11 | tags: w&v
+8055;Omzet 12;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 12 | tags: w&v
+8060;Omzet 13;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 13 | tags: w&v
+8065;Omzet 14;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 14 | tags: w&v
+8070;Omzet 15;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 15 | tags: w&v
+8075;Omzet 16;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 16 | tags: w&v
+8080;Omzet 17;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 17 | tags: w&v
+8085;Omzet 18;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 18 | tags: w&v
+8090;Omzet 19;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 19 | tags: w&v
+8095;Omzet 20;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet 20 | tags: w&v
+8100;Managementfee 1;W;Winst & Verlies;RGS versie 3.5;WOmzNodOdh;1a. Netto-omzet uit verleende diensten belast met hoog tarief;110;Omzet;Credit;C;W&V;managementfee 1 | tags: w&v
+8110;Managementfee 2;W;Winst & Verlies;RGS versie 3.5;WOmzNodOdh;1a. Netto-omzet uit verleende diensten belast met hoog tarief;110;Omzet;Credit;C;W&V;managementfee 2 | tags: w&v
+8120;Managementfee 3;W;Winst & Verlies;RGS versie 3.5;WOmzNodOdh;1a. Netto-omzet uit verleende diensten belast met hoog tarief;110;Omzet;Credit;C;W&V;managementfee 3 | tags: w&v
+8130;Managementfee 4;W;Winst & Verlies;RGS versie 3.5;WOmzNodOdh;1a. Netto-omzet uit verleende diensten belast met hoog tarief;110;Omzet;Credit;C;W&V;managementfee 4 | tags: w&v
+8140;Managementfee 5;W;Winst & Verlies;RGS versie 3.5;WOmzNodOdh;1a. Netto-omzet uit verleende diensten belast met hoog tarief;110;Omzet;Credit;C;W&V;managementfee 5 | tags: w&v
+8200;Omzet onbelast;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlg;1e. Netto-omzet uit leveringen handelsgoederen belast met 0% of niet bij u belast;110;Omzet;Credit;C;W&V;omzet onbelast | tags: w&v
+8250;Omzet vrijgesteld;W;Winst & Verlies;RGS versie 3.5;WOmzNopOlg;1e. Netto-omzet uit geproduceerde goederen belast met 0% of niet bij u belast;110;Omzet;Credit;C;W&V;omzet vrijgesteld | tags: w&v
+8300;Omzet buitenland binnen EU;W;Winst & Verlies;RGS versie 3.5;WOmzNohOli;3b. Netto-omzet uit leveringen handelsgoederen naar landen binnen de EU;110;Omzet;Credit;C;W&V;omzet buitenland binnen eu | tags: w&v
+8310;Omzet buitenland buiten EU (leveringen);W;Winst & Verlies;RGS versie 3.5;WOmzNodOdb;3a. Netto-omzet uit verleende diensten naar landen buiten de EU (uitvoer);110;Omzet;Credit;C;W&V;omzet buitenland buiten eu (leveringen) | tags: w&v
+8320;Omzet buitenland buiten EU (diensten);W;Winst & Verlies;RGS versie 3.5;WOmzNodOdi;3b. Netto-omzet uit verleende diensten naar landen binnen de EU;110;Omzet;Credit;C;W&V;omzet buitenland buiten eu (diensten) | tags: w&v
+8330;Omzet btw verlegd;W;Winst & Verlies;RGS versie 3.5;WOmzNohOll;2a. Netto-omzet uit leveringen handelsgoederen waarbij de omzetbelasting naar u is verlegd;110;Omzet;Credit;C;BOTH;"omzet btw verlegd | tags: balans_en_w&v; btw"
+8350;Blanco omzet buitenland;W;Winst & Verlies;RGS versie 3.5;WOmzNohOlh;1a. Netto-omzet uit verkoop van handelsgoederen belast met hoog tarief;110;Omzet;Credit;C;W&V;blanco omzet buitenland | tags: w&v
+8400;Betalingsverschillen verkoop;W;Winst & Verlies;RGS versie 3.5;WBedAdlBet;Betalingsverschillen administratieve lasten;110;Omzet;Credit;C;W&V;betalingsverschillen verkoop | tags: w&v
+8410;Verkoopkortingen;W;Winst & Verlies;RGS versie 3.5;WOmzKebVek;Verleende kortingen;110;Omzet;Credit;C;W&V;verkoopkortingen | tags: w&v
+8420;Prijsverschillen;W;Winst & Verlies;RGS versie 3.5;WOmzKebVekOkr;Overige verleende kortingen verleende kortingen;110;Omzet;Credit;C;W&V;prijsverschillen | tags: w&v
+8500;Omzet nog te factureren;W;Winst & Verlies;RGS versie 3.5;WOmzNopOlh;1a. Netto-omzet uit leveringen geproduceerde goederen belast met hoog tarief;110;Omzet;Credit;C;W&V;omzet nog te factureren | tags: w&v
+8900;Overige bedrijfsopbrengsten;W;Winst & Verlies;RGS versie 3.5;WOmzNooNdo;Opbrengsten uit overige bronnen overige netto-omzet;110;Omzet;Credit;C;W&V;overige bedrijfsopbrengsten | tags: w&v
+9000;Buitengewone baten;W;Winst & Verlies;RGS versie 3.5;WOvbOvoOvo;Overige opbrengsten niet elders genoemd baten uit overige activiteiten;140;Buitengewone inkomsten;Credit;C;W&V;buitengewone baten | tags: w&v
+9010;Buitengewone lasten;W;Winst & Verlies;RGS versie 3.5;WBedAlkOal;Algemene kosten andere kosten;130;Buitengewone kosten;Debet;D;W&V;buitengewone lasten | tags: w&v
+9500;Resultaat deelnemingen 1;W;Winst & Verlies;RGS versie 3.5;WRedAirAwd;Resultaat deelnemingen (dividend);140;Buitengewone inkomsten;Credit;C;W&V;resultaat deelnemingen 1 | tags: w&v
+9510;Resultaat deelnemingen 2;W;Winst & Verlies;RGS versie 3.5;WRedAirAwd;Resultaat deelnemingen (dividend);140;Buitengewone inkomsten;Credit;C;W&V;resultaat deelnemingen 2 | tags: w&v
+9520;Resultaat deelnemingen 3;W;Winst & Verlies;RGS versie 3.5;WRedAirAwd;Resultaat deelnemingen (dividend);140;Buitengewone inkomsten;Credit;C;W&V;resultaat deelnemingen 3 | tags: w&v
+9530;Resultaat deelnemingen 4;W;Winst & Verlies;RGS versie 3.5;WRedAirAwd;Resultaat deelnemingen (dividend);140;Buitengewone inkomsten;Credit;C;W&V;resultaat deelnemingen 4 | tags: w&v
+9540;Resultaat deelnemingen 5;W;Winst & Verlies;RGS versie 3.5;WRedAirAwd;Resultaat deelnemingen (dividend);140;Buitengewone inkomsten;Credit;C;W&V;resultaat deelnemingen 5 | tags: w&v
+9900;Vennootschapsbelasting;W;Winst & Verlies;RGS versie 3.5;WBelBgrBgr;Belastingen uit huidig boekjaar belastingen over de winst of het verlies;150;Belastingen;Debet;D;W&V;vennootschapsbelasting | tags: w&v
+9910;Vennootschapsbelasting voorgaande jaren;W;Winst & Verlies;RGS versie 3.5;WBelBgrBuv;Belastingen uit voorgaande boekjaren belastingen over de winst of het verlies;150;Belastingen;Debet;D;W&V;vennootschapsbelasting voorgaande jaren | tags: w&v
+9920;Mutatie latente belastingverplichting;W;Winst & Verlies;RGS versie 3.5;WBelBgrDlb;Dotatie voorziening voor latente belastingen;150;Belastingen;Debet;D;BOTH;mutatie latente belastingverplichting | tags: balans_en_w&v
+9930;Correctie BTW voorgaande jaren;W;Winst & Verlies;RGS versie 3.5;WBedAdlNao;Naheffing omzetbelasting administratieve lasten;150;Belastingen;Credit;C;BOTH;"correctie btw voorgaande jaren | tags: balans_en_w&v; btw"
+999999999;Not allocated (created by import);B;Balans;RGS versie 3.5;BLimKruSto;Stortingen onderweg kruisposten;90;Algemeen;Credit;C;BALANS;not allocated (created by import) | tags: balans
