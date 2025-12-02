@@ -200,6 +200,7 @@ def load_data():
         "pdf_text": "",
         "company_context": "",
         "latest_year": max(AVAILABLE_YEARS),
+        "rgs": None,
     }
 
     # Transacties (CSV)
@@ -240,6 +241,10 @@ def load_data():
                 df["AmountDC_num"], errors="coerce"
             ).fillna(0.0)
 
+            # Zorg dat GL-code als string beschikbaar is voor koppeling met RGS
+            if "Finny_GLCode" in df.columns:
+                df["Finny_GLCode_str"] = df["Finny_GLCode"].astype(str).str.strip()
+
             data["trans"] = df
         except Exception as e:
             st.error(f"Fout bij laden Finny_Transactions.csv: {e}")
@@ -252,9 +257,23 @@ def load_data():
                 syn["Synoniem_Clean"] = (
                     syn["Synoniem"].astype(str).str.lower().str.strip()
                 )
+            # Zorg dat GL-code als string beschikbaar is
+            if "Finny_GLCode" in syn.columns:
+                syn["Finny_GLCode_str"] = syn["Finny_GLCode"].astype(str).str.strip()
             data["syn"] = syn
         except Exception:
             data["syn"] = None
+
+    # RGS-schema
+    if os.path.exists("Finny_RGS.xlsx"):
+        try:
+            rgs = pd.read_excel("Finny_RGS.xlsx")
+            if "Finny_GLCode" in rgs.columns:
+                rgs["Finny_GLCode_str"] = rgs["Finny_GLCode"].astype(str).str.strip()
+            data["rgs"] = rgs
+        except Exception as e:
+            st.error(f"Fout bij laden Finny_RGS.xlsx: {e}")
+            data["rgs"] = None
 
     # Jaarrekening PDFs
     pdf_files = glob.glob("*.pdf")
@@ -290,7 +309,7 @@ def load_data():
 
 
 # ==========================================
-# 3. ROUTER & CSV-LOGICA (Sandwich v2.1)
+# 3. ROUTER & CSV-LOGICA (Sandwich v2.1 + RGS)
 # ==========================================
 
 def classify_intent(client: OpenAI, question: str) -> dict:
@@ -370,12 +389,95 @@ def _extend_patterns_with_fallback(term: str, patterns: list[str]) -> list[str]:
     return patterns
 
 
+def _append_rgs_info_to_lines(lines: list[str], df_subset: pd.DataFrame, rgs_df: pd.DataFrame | None) -> None:
+    """
+    Verrijkt de context met RGS-informatie over de gebruikte grootboekrekeningen:
+    - Welke GL-codes zitten in deze selectie?
+    - Zijn het Balans-, W&V- of gemengde posten?
+    """
+    if rgs_df is None:
+        return
+    if df_subset is None or df_subset.empty:
+        return
+    if "Finny_GLCode_str" not in df_subset.columns:
+        return
+
+    gls = (
+        df_subset["Finny_GLCode_str"]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    if not gls:
+        return
+
+    meta = rgs_df.copy()
+    if "Finny_GLCode_str" not in meta.columns:
+        meta["Finny_GLCode_str"] = meta["Finny_GLCode"].astype(str).str.strip()
+    meta = meta[meta["Finny_GLCode_str"].isin(gls)]
+
+    if meta.empty:
+        return
+
+    # Bepaal type: Balans / W&V / mix
+    types = set(str(t) for t in meta.get("BalanceTypeDescription", []))
+    types_clean = {t for t in types if t}
+    summary_line = ""
+    if len(types_clean) == 1:
+        t = next(iter(types_clean))
+        if "Balans" in t:
+            summary_line = "Deze selectie betreft **balansposten** volgens het RGS-schema."
+        elif "Winst" in t:
+            summary_line = "Deze selectie betreft **winst-en-verliesposten** volgens het RGS-schema."
+        else:
+            summary_line = f"Deze selectie betreft posten van het type: {t}."
+    elif len(types_clean) > 1:
+        summary_line = (
+            "Deze selectie bevat **zowel balansposten als winst-en-verliesposten** volgens het RGS-schema."
+        )
+
+    if summary_line:
+        lines.append(summary_line)
+        lines.append("")
+
+    cols = ["Finny_GLCode", "Finny_GLDescription", "BalanceTypeDescription"]
+    if "InterpretationHint" in meta.columns:
+        cols.append("InterpretationHint")
+
+    table = (
+        meta[cols]
+        .drop_duplicates()
+        .sort_values("Finny_GLCode")
+    )
+    try:
+        lines.append("Overzicht van de betrokken RGS-rekeningen:")
+        lines.append(table.to_markdown(index=False))
+        lines.append("")
+    except Exception:
+        # fallback: geen markdown, maar simpele tekst
+        lines.append("Betrokken RGS-rekeningen:")
+        for _, row in table.iterrows():
+            code = row.get("Finny_GLCode")
+            descr = row.get("Finny_GLDescription")
+            btype = row.get("BalanceTypeDescription")
+            hint = row.get("InterpretationHint", "")
+            if hint:
+                lines.append(f"- {code}: {descr} ({btype}, hint={hint})")
+            else:
+                lines.append(f"- {code}: {descr} ({btype})")
+        lines.append("")
+
+
 def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | None, float | None]:
     """
-    CSV-aggregatie + DETAILS-drill-down (v2.1).
+    CSV-aggregatie + DETAILS-drill-down (v2.1) + RGS-meta-informatie.
     """
     base_df = data.get("trans")
     syn = data.get("syn")
+    rgs_df = data.get("rgs")
     if base_df is None or base_df.empty:
         return None, None
 
@@ -454,6 +556,10 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
         lines.append(
             f"### Top transacties voor '{term or 'geselecteerde kosten'}' ({yrs_label})"
         )
+
+        # Voeg RGS-meta toe over de geselecteerde transacties (balans vs W&V)
+        _append_rgs_info_to_lines(lines, df_current_range, rgs_df)
+
         for _, row in top_trans.iterrows():
             desc = str(row.get("Description", "") or "").strip() or "Onbekend"
             acc = str(row.get("AccountName", "") or "").strip()
@@ -506,6 +612,10 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
 
             lines.append(f"### {label.capitalize()} in {cur_year}")
             lines.append(f"Totaal: € {total_cur:,.2f}")
+            lines.append("")
+
+            # RGS-meta over de gebruikte rekeningen in deze selectie
+            _append_rgs_info_to_lines(lines, df_cur, rgs_df)
 
             if prev_line:
                 lines.append(prev_line)
@@ -528,6 +638,11 @@ def build_csv_query(data: dict, intent: dict, years: list[int]) -> tuple[str | N
     # TREND of fallback
     lines.append(f"### Cijfers uit transacties ({yrs_label})")
     lines.append(f"Totaal: € {total:,.2f}")
+    lines.append("")
+
+    # RGS-meta over de gehele selectie
+    _append_rgs_info_to_lines(lines, df_current_range, rgs_df)
+
     return "\n".join(lines), total
 
 
