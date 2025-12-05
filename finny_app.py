@@ -264,17 +264,30 @@ def load_data():
         except Exception:
             data["syn"] = None
 
-    # RGS-schema
-    if os.path.exists("Finny_RGS.xlsx"):
+    # RGS-schema (CSV-versie)
+    # Verwacht RGS.csv met o.a.:
+    # - Finny_GLCode
+    # - Finny_GLDescription
+    # - BalanceTypeDescription (balans / winst-en-verlies)
+    # - optioneel InterpretationHint
+    if os.path.exists("RGS.csv"):
         try:
-            rgs = pd.read_excel("Finny_RGS.xlsx")
+            rgs = pd.read_csv("RGS.csv", sep=";", dtype=str)
+            rgs.columns = rgs.columns.str.strip()
+
+            # Zorg dat GL-code als string beschikbaar is voor koppeling
             if "Finny_GLCode" in rgs.columns:
                 rgs["Finny_GLCode_str"] = rgs["Finny_GLCode"].astype(str).str.strip()
+            elif "GLCode" in rgs.columns:
+                # fallback-kolomnaam, als je RGS.csv anders heet
+                rgs["Finny_GLCode_str"] = rgs["GLCode"].astype(str).str.strip()
+
             data["rgs"] = rgs
         except Exception as e:
-            st.error(f"Fout bij laden Finny_RGS.xlsx: {e}")
+            st.error(f"Fout bij laden RGS.csv: {e}")
             data["rgs"] = None
-
+    else:
+        data["rgs"] = None
     # Jaarrekening PDFs
     pdf_files = glob.glob("*.pdf")
     for pdf in pdf_files:
